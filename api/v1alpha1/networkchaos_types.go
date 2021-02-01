@@ -1,4 +1,4 @@
-// Copyright 2019 PingCAP, Inc.
+// Copyright 2019 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,18 +14,29 @@
 package v1alpha1
 
 import (
-	"strconv"
-	"time"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	chaosdaemonpb "github.com/pingcap/chaos-mesh/pkg/chaosdaemon/pb"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// ChaosAction represents the chaos action about pods.
+// +kubebuilder:object:root=true
+// +chaos-mesh:base
+
+// NetworkChaos is the Schema for the networkchaos API
+type NetworkChaos struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// Spec defines the behavior of a pod chaos experiment
+	Spec NetworkChaosSpec `json:"spec"`
+
+	// +optional
+	// Most recently observed status of the chaos experiment about pods
+	Status NetworkChaosStatus `json:"status"`
+}
+
+// NetworkChaosAction represents the chaos action about network.
 type NetworkChaosAction string
 
 const (
@@ -47,50 +58,57 @@ const (
 
 	// PartitionAction represents the chaos action of network partition of pods.
 	PartitionAction NetworkChaosAction = "partition"
+
+	// BandwidthAction represents the chaos action of network bandwidth of pods.
+	BandwidthAction NetworkChaosAction = "bandwidth"
 )
 
-// PartitionDirection represents the block direction from source to target
-type PartitionDirection string
+// Direction represents traffic direction from source to target,
+// it could be netem, delay, loss, duplicate, corrupt or partition,
+// check comments below for detail direction flow.
+type Direction string
 
 const (
-	// To represents block network packet from source to target
-	To PartitionDirection = "to"
+	// To represents network packet from source to target
+	To Direction = "to"
 
-	// From represents block network packet to source from target
-	From PartitionDirection = "from"
+	// From represents network packet to source from target
+	From Direction = "from"
 
-	// Both represents block both directions
-	Both PartitionDirection = "both"
+	// Both represents both directions
+	Both Direction = "both"
 )
 
-type PartitionTarget struct {
-	// TargetSelector defines the partition target selector
-	TargetSelector SelectorSpec `json:"selector"`
+// Target represents network partition and netem action target.
+type Target struct {
+	// TargetSelector defines the target selector
+	TargetSelector SelectorSpec `json:"selector" mapstructure:"selector"`
 
-	// TargetMode defines the partition target selector mode
-	TargetMode PodMode `json:"mode"`
+	// TargetMode defines the target selector mode
+	// +kubebuilder:validation:Enum=one;all;fixed;fixed-percent;random-max-percent;""
+	TargetMode PodMode `json:"mode" mapstructure:"mode"`
 
 	// TargetValue is required when the mode is set to `FixedPodMode` / `FixedPercentPodMod` / `RandomMaxPercentPodMod`.
 	// If `FixedPodMode`, provide an integer of pods to do chaos action.
-	// If `FixedPercentPodMod`, provide a number from 0-100 to specify the max % of pods the server can do chaos action.
-	// If `RandomMaxPercentPodMod`,  provide a number from 0-100 to specify the % of pods to do chaos action
+	// If `FixedPercentPodMod`, provide a number from 0-100 to specify the percent of pods the server can do chaos action.
+	// If `RandomMaxPercentPodMod`,  provide a number from 0-100 to specify the max percent of pods to do chaos action
 	// +optional
-	TargetValue string `json:"value"`
+	TargetValue string `json:"value" mapstructure:"value"`
 }
 
 // GetSelector is a getter for Selector (for implementing SelectSpec)
-func (t *PartitionTarget) GetSelector() SelectorSpec {
-	return t.TargetSelector
+func (in *Target) GetSelector() SelectorSpec {
+	return in.TargetSelector
 }
 
 // GetMode is a getter for Mode (for implementing SelectSpec)
-func (t *PartitionTarget) GetMode() PodMode {
-	return t.TargetMode
+func (in *Target) GetMode() PodMode {
+	return in.TargetMode
 }
 
 // GetValue is a getter for Value (for implementing SelectSpec)
-func (t *PartitionTarget) GetValue() string {
-	return t.TargetValue
+func (in *Target) GetValue() string {
+	return in.TargetValue
 }
 
 // NetworkChaosSpec defines the desired state of NetworkChaos
@@ -98,16 +116,18 @@ type NetworkChaosSpec struct {
 	// Action defines the specific network chaos action.
 	// Supported action: partition, netem, delay, loss, duplicate, corrupt
 	// Default action: delay
+	// +kubebuilder:validation:Enum=netem;delay;loss;duplicate;corrupt;partition;bandwidth
 	Action NetworkChaosAction `json:"action"`
 
 	// Mode defines the mode to run chaos action.
 	// Supported mode: one / all / fixed / fixed-percent / random-max-percent
+	// +kubebuilder:validation:Enum=one;all;fixed;fixed-percent;random-max-percent
 	Mode PodMode `json:"mode"`
 
 	// Value is required when the mode is set to `FixedPodMode` / `FixedPercentPodMod` / `RandomMaxPercentPodMod`.
 	// If `FixedPodMode`, provide an integer of pods to do chaos action.
-	// If `FixedPercentPodMod`, provide a number from 0-100 to specify the max % of pods the server can do chaos action.
-	// If `RandomMaxPercentPodMod`,  provide a number from 0-100 to specify the % of pods to do chaos action
+	// If `FixedPercentPodMod`, provide a number from 0-100 to specify the percent of pods the server can do chaos action.
+	// If `RandomMaxPercentPodMod`,  provide a number from 0-100 to specify the max percent of pods to do chaos action
 	// +optional
 	Value string `json:"value"`
 
@@ -120,34 +140,21 @@ type NetworkChaosSpec struct {
 	// Scheduler defines some schedule rules to control the running time of the chaos experiment about network.
 	Scheduler *SchedulerSpec `json:"scheduler,omitempty"`
 
-	// Delay represents the detail about delay action
+	// TcParameter represents the traffic control definition
+	TcParameter `json:",inline"`
+
+	// Direction represents the direction, this applies on netem and network partition action
 	// +optional
-	Delay *DelaySpec `json:"delay,omitempty"`
+	// +kubebuilder:validation:Enum=to;from;both;""
+	Direction Direction `json:"direction,omitempty"`
 
-	// Loss represents the detail about loss action
-	Loss *LossSpec `json:"loss,omitempty"`
-
-	// DuplicateSpec represents the detail about loss action
-	Duplicate *DuplicateSpec `json:"duplicate,omitempty"`
-
-	// Corrupt represents the detail about corrupt action
-	Corrupt *CorruptSpec `json:"corrupt,omitempty"`
-
-	// Direction represents the partition direction
+	// Target represents network target, this applies on netem and network partition action
 	// +optional
-	Direction PartitionDirection `json:"direction"`
+	Target *Target `json:"target,omitempty"`
 
-	// Target represents network partition target
+	// ExternalTargets represents network targets outside k8s
 	// +optional
-	Target PartitionTarget `json:"target"`
-
-	// Next time when this action will be applied again
-	// +optional
-	NextStart *metav1.Time `json:"nextStart,omitempty"`
-
-	// Next time when this action will be recovered
-	// +optional
-	NextRecover *metav1.Time `json:"nextRecover,omitempty"`
+	ExternalTargets []string `json:"externalTargets,omitempty"`
 }
 
 // GetSelector is a getter for Selector (for implementing SelectSpec)
@@ -170,84 +177,6 @@ type NetworkChaosStatus struct {
 	ChaosStatus `json:",inline"`
 }
 
-// +kubebuilder:object:root=true
-
-// NetworkChaos is the Schema for the networkchaos API
-type NetworkChaos struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	// Spec defines the behavior of a pod chaos experiment
-	Spec NetworkChaosSpec `json:"spec"`
-
-	// +optional
-	// Most recently observed status of the chaos experiment about pods
-	Status NetworkChaosStatus `json:"status"`
-}
-
-func (in *NetworkChaos) GetStatus() *ChaosStatus {
-	return &in.Status.ChaosStatus
-}
-
-func (in *NetworkChaos) IsDeleted() bool {
-	return !in.DeletionTimestamp.IsZero()
-}
-
-// GetDuration would return the duration for chaos
-func (in *NetworkChaos) GetDuration() (*time.Duration, error) {
-	if in.Spec.Duration == nil {
-		return nil, nil
-	}
-	duration, err := time.ParseDuration(*in.Spec.Duration)
-	if err != nil {
-		return nil, err
-	}
-	return &duration, nil
-}
-
-func (in *NetworkChaos) GetNextStart() time.Time {
-	if in.Spec.NextStart == nil {
-		return time.Time{}
-	}
-	return in.Spec.NextStart.Time
-}
-
-func (in *NetworkChaos) SetNextStart(t time.Time) {
-	if t.IsZero() {
-		in.Spec.NextStart = nil
-		return
-	}
-
-	if in.Spec.NextStart == nil {
-		in.Spec.NextStart = &metav1.Time{}
-	}
-	in.Spec.NextStart.Time = t
-}
-
-func (in *NetworkChaos) GetNextRecover() time.Time {
-	if in.Spec.NextRecover == nil {
-		return time.Time{}
-	}
-	return in.Spec.NextRecover.Time
-}
-
-func (in *NetworkChaos) SetNextRecover(t time.Time) {
-	if t.IsZero() {
-		in.Spec.NextRecover = nil
-		return
-	}
-
-	if in.Spec.NextRecover == nil {
-		in.Spec.NextRecover = &metav1.Time{}
-	}
-	in.Spec.NextRecover.Time = t
-}
-
-// GetScheduler would return the scheduler for chaos
-func (in *NetworkChaos) GetScheduler() *SchedulerSpec {
-	return in.Spec.Scheduler
-}
-
 // DelaySpec defines detail of a delay action
 type DelaySpec struct {
 	Latency     string       `json:"latency"`
@@ -256,69 +185,10 @@ type DelaySpec struct {
 	Reorder     *ReorderSpec `json:"reorder,omitempty"`
 }
 
-// ToNetem implements Netem interface.
-func (delay *DelaySpec) ToNetem() (*chaosdaemonpb.Netem, error) {
-	delayTime, err := time.ParseDuration(delay.Latency)
-	if err != nil {
-		return nil, err
-	}
-	jitter, err := time.ParseDuration(delay.Jitter)
-	if err != nil {
-		return nil, err
-	}
-
-	corr, err := strconv.ParseFloat(delay.Correlation, 32)
-	if err != nil {
-		return nil, err
-	}
-
-	netem := &chaosdaemonpb.Netem{
-		Time:      uint32(delayTime.Nanoseconds() / 1e3),
-		DelayCorr: float32(corr),
-		Jitter:    uint32(jitter.Nanoseconds() / 1e3),
-	}
-
-	if delay.Reorder != nil {
-		reorderPercentage, err := strconv.ParseFloat(delay.Reorder.Reorder, 32)
-		if err != nil {
-			return nil, err
-		}
-
-		corr, err := strconv.ParseFloat(delay.Reorder.Correlation, 32)
-		if err != nil {
-			return nil, err
-		}
-
-		netem.Reorder = float32(reorderPercentage)
-		netem.ReorderCorr = float32(corr)
-		netem.Gap = uint32(delay.Reorder.Gap)
-	}
-
-	return netem, nil
-}
-
 // LossSpec defines detail of a loss action
 type LossSpec struct {
 	Loss        string `json:"loss"`
 	Correlation string `json:"correlation"`
-}
-
-// ToNetem implements Netem interface.
-func (loss *LossSpec) ToNetem() (*chaosdaemonpb.Netem, error) {
-	lossPercentage, err := strconv.ParseFloat(loss.Loss, 32)
-	if err != nil {
-		return nil, err
-	}
-
-	corr, err := strconv.ParseFloat(loss.Correlation, 32)
-	if err != nil {
-		return nil, err
-	}
-
-	return &chaosdaemonpb.Netem{
-		Loss:     float32(lossPercentage),
-		LossCorr: float32(corr),
-	}, nil
 }
 
 // DuplicateSpec defines detail of a duplicate action
@@ -327,46 +197,36 @@ type DuplicateSpec struct {
 	Correlation string `json:"correlation"`
 }
 
-// ToNetem implements Netem interface.
-func (duplicate *DuplicateSpec) ToNetem() (*chaosdaemonpb.Netem, error) {
-	duplicatePercentage, err := strconv.ParseFloat(duplicate.Duplicate, 32)
-	if err != nil {
-		return nil, err
-	}
-
-	corr, err := strconv.ParseFloat(duplicate.Correlation, 32)
-	if err != nil {
-		return nil, err
-	}
-
-	return &chaosdaemonpb.Netem{
-		Duplicate:     float32(duplicatePercentage),
-		DuplicateCorr: float32(corr),
-	}, nil
-}
-
 // CorruptSpec defines detail of a corrupt action
 type CorruptSpec struct {
 	Corrupt     string `json:"corrupt"`
 	Correlation string `json:"correlation"`
 }
 
-// ToNetem implements Netem interface.
-func (corrupt *CorruptSpec) ToNetem() (*chaosdaemonpb.Netem, error) {
-	corruptPercentage, err := strconv.ParseFloat(corrupt.Corrupt, 32)
-	if err != nil {
-		return nil, err
-	}
-
-	corr, err := strconv.ParseFloat(corrupt.Correlation, 32)
-	if err != nil {
-		return nil, err
-	}
-
-	return &chaosdaemonpb.Netem{
-		Corrupt:     float32(corruptPercentage),
-		CorruptCorr: float32(corr),
-	}, nil
+// BandwidthSpec defines detail of bandwidth limit.
+type BandwidthSpec struct {
+	// Rate is the speed knob. Allows bps, kbps, mbps, gbps, tbps unit. bps means bytes per second.
+	Rate string `json:"rate"`
+	// Limit is the number of bytes that can be queued waiting for tokens to become available.
+	// +kubebuilder:validation:Minimum=1
+	Limit uint32 `json:"limit"`
+	// Buffer is the maximum amount of bytes that tokens can be available for instantaneously.
+	// +kubebuilder:validation:Minimum=1
+	Buffer uint32 `json:"buffer"`
+	// Peakrate is the maximum depletion rate of the bucket.
+	// The peakrate does not need to be set, it is only necessary
+	// if perfect millisecond timescale shaping is required.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	Peakrate *uint64 `json:"peakrate,omitempty"`
+	// Minburst specifies the size of the peakrate bucket. For perfect
+	// accuracy, should be set to the MTU of the interface.  If a
+	// peakrate is needed, but some burstiness is acceptable, this
+	// size can be raised. A 3000 byte minburst allows around 3mbit/s
+	// of peakrate, given 1000 byte packets.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	Minburst *uint32 `json:"minburst,omitempty"`
 }
 
 // ReorderSpec defines details of packet reorder.
@@ -374,17 +234,4 @@ type ReorderSpec struct {
 	Reorder     string `json:"reorder"`
 	Correlation string `json:"correlation"`
 	Gap         int    `json:"gap"`
-}
-
-// +kubebuilder:object:root=true
-
-// NetworkChaosList contains a list of NetworkChaos
-type NetworkChaosList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []NetworkChaos `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&NetworkChaos{}, &NetworkChaosList{})
 }

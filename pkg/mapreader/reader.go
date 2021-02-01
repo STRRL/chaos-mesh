@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -52,8 +52,6 @@ func Read(pid int) ([]Entry, error) {
 
 		if len(sections) > 5 {
 			path = sections[len(sections)-1]
-		} else {
-			path = ""
 		}
 
 		addresses := strings.Split(sections[0], "-")

@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,25 +15,18 @@ package v1alpha1
 
 import (
 	"fmt"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	ctrl "sigs.k8s.io/controller-runtime"
-	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 // log is for logging in this package.
 var timechaoslog = logf.Log.WithName("timechaos-resource")
 
-// SetupWebhookWithManager setup TimeChaos's webhook with manager
-func (in *TimeChaos) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(in).
-		Complete()
-}
-
-// +kubebuilder:webhook:path=/mutate-pingcap-com-v1alpha1-timechaos,mutating=true,failurePolicy=fail,groups=pingcap.com,resources=timechaos,verbs=create;update,versions=v1alpha1,name=mtimechaos.kb.io
+// +kubebuilder:webhook:path=/mutate-chaos-mesh-org-v1alpha1-timechaos,mutating=true,failurePolicy=fail,groups=chaos-mesh.org,resources=timechaos,verbs=create;update,versions=v1alpha1,name=mtimechaos.kb.io
 
 var _ webhook.Defaulter = &TimeChaos{}
 
@@ -42,9 +35,10 @@ func (in *TimeChaos) Default() {
 	timechaoslog.Info("default", "name", in.Name)
 
 	in.Spec.Selector.DefaultNamespace(in.GetNamespace())
+	in.Spec.DefaultClockIds()
 }
 
-// +kubebuilder:webhook:verbs=create;update,path=/validate-pingcap-com-v1alpha1-timechaos,mutating=false,failurePolicy=fail,groups=pingcap.com,resources=timechaos,versions=v1alpha1,name=vtimechaos.kb.io
+// +kubebuilder:webhook:verbs=create;update,path=/validate-chaos-mesh-org-v1alpha1-timechaos,mutating=false,failurePolicy=fail,groups=chaos-mesh.org,resources=timechaos,versions=v1alpha1,name=vtimechaos.kb.io
 
 var _ ChaosValidator = &TimeChaos{}
 
@@ -71,25 +65,36 @@ func (in *TimeChaos) ValidateDelete() error {
 // Validate validates chaos object
 func (in *TimeChaos) Validate() error {
 	specField := field.NewPath("spec")
-	errLst := in.ValidateScheduler(specField)
+	allErrs := in.ValidateScheduler(specField)
+	allErrs = append(allErrs, in.ValidatePodMode(specField)...)
+	allErrs = append(allErrs, in.Spec.validateTimeOffset(specField.Child("timeOffset"))...)
 
-	if len(errLst) > 0 {
-		return fmt.Errorf(errLst.ToAggregate().Error())
+	if len(allErrs) > 0 {
+		return fmt.Errorf(allErrs.ToAggregate().Error())
 	}
 	return nil
 }
 
 // ValidateScheduler validates the scheduler and duration
-func (in *TimeChaos) ValidateScheduler(root *field.Path) field.ErrorList {
-	if in.Spec.Duration != nil && in.Spec.Scheduler != nil {
-		return nil
-	} else if in.Spec.Duration == nil && in.Spec.Scheduler == nil {
-		return nil
+func (in *TimeChaos) ValidateScheduler(spec *field.Path) field.ErrorList {
+	return ValidateScheduler(in, spec)
+}
+
+// ValidatePodMode validates the value with podmode
+func (in *TimeChaos) ValidatePodMode(spec *field.Path) field.ErrorList {
+	return ValidatePodMode(in.Spec.Value, in.Spec.Mode, spec.Child("value"))
+}
+
+// validateTimeOffset validates the timeOffset
+func (in *TimeChaosSpec) validateTimeOffset(timeOffset *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	_, err := time.ParseDuration(in.TimeOffset)
+	if err != nil {
+		allErrs = append(allErrs, field.Invalid(timeOffset,
+			in.TimeOffset,
+			fmt.Sprintf("parse timeOffset field error:%s", err)))
 	}
 
-	allErrs := field.ErrorList{}
-	schedulerField := root.Child("scheduler")
-
-	allErrs = append(allErrs, field.Invalid(schedulerField, in.Spec.Scheduler, ValidateSchedulerError))
 	return allErrs
 }

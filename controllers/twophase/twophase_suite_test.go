@@ -1,4 +1,17 @@
-package twophase_test
+// Copyright 2020 Chaos Mesh Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package twophase
 
 import (
 	"context"
@@ -20,10 +33,10 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/pingcap/chaos-mesh/api/v1alpha1"
-	"github.com/pingcap/chaos-mesh/controllers/reconciler"
-	"github.com/pingcap/chaos-mesh/controllers/twophase"
-	"github.com/pingcap/chaos-mesh/pkg/mock"
+	"github.com/chaos-mesh/chaos-mesh/api/v1alpha1"
+	"github.com/chaos-mesh/chaos-mesh/pkg/mock"
+	ctx "github.com/chaos-mesh/chaos-mesh/pkg/router/context"
+	end "github.com/chaos-mesh/chaos-mesh/pkg/router/endpoint"
 )
 
 func TestTwoPhase(t *testing.T) {
@@ -45,25 +58,25 @@ var _ = BeforeSuite(func(done Done) {
 var _ = AfterSuite(func() {
 })
 
-var _ reconciler.InnerReconciler = (*fakeReconciler)(nil)
+var _ end.Endpoint = (*fakeEndpoint)(nil)
 
-type fakeReconciler struct{}
+type fakeEndpoint struct{}
 
-func (r fakeReconciler) Apply(ctx context.Context, req ctrl.Request, chaos reconciler.InnerObject) error {
+func (r fakeEndpoint) Apply(ctx context.Context, req ctrl.Request, chaos v1alpha1.InnerObject) error {
 	if err := mock.On("MockApplyError"); err != nil {
 		return err.(error)
 	}
 	return nil
 }
 
-func (r fakeReconciler) Recover(ctx context.Context, req ctrl.Request, chaos reconciler.InnerObject) error {
+func (r fakeEndpoint) Recover(ctx context.Context, req ctrl.Request, chaos v1alpha1.InnerObject) error {
 	if err := mock.On("MockRecoverError"); err != nil {
 		return err.(error)
 	}
 	return nil
 }
 
-var _ twophase.InnerSchedulerObject = (*fakeTwoPhaseChaos)(nil)
+var _ v1alpha1.InnerSchedulerObject = (*fakeTwoPhaseChaos)(nil)
 
 type fakeTwoPhaseChaos struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -94,11 +107,17 @@ func (in *fakeTwoPhaseChaos) GetStatus() *v1alpha1.ChaosStatus {
 	return &in.Status
 }
 
+// IsDeleted returns whether this resource has been deleted
 func (in *fakeTwoPhaseChaos) IsDeleted() bool {
 	return in.Deleted
 }
 
-func (r fakeReconciler) Object() reconciler.InnerObject {
+// IsPaused returns whether this resource has been paused
+func (in *fakeTwoPhaseChaos) IsPaused() bool {
+	return false
+}
+
+func (r fakeEndpoint) Object() v1alpha1.InnerObject {
 	return &fakeTwoPhaseChaos{}
 }
 
@@ -155,6 +174,10 @@ func (in *fakeTwoPhaseChaos) GetScheduler() *v1alpha1.SchedulerSpec {
 	return in.Scheduler
 }
 
+func (in *fakeTwoPhaseChaos) GetChaos() *v1alpha1.ChaosInstance {
+	return nil
+}
+
 func (in *fakeTwoPhaseChaos) DeepCopyInto(out *fakeTwoPhaseChaos) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
@@ -197,10 +220,7 @@ func (in *fakeTwoPhaseChaos) DeepCopy() *fakeTwoPhaseChaos {
 }
 
 func (in *fakeTwoPhaseChaos) DeepCopyObject() runtime.Object {
-	if c := in.DeepCopy(); c != nil {
-		return c
-	}
-	return nil
+	return in.DeepCopy()
 }
 
 var (
@@ -248,10 +268,12 @@ var _ = Describe("TwoPhase", func() {
 
 			c := fake.NewFakeClientWithScheme(scheme.Scheme, &chaos)
 
-			r := twophase.Reconciler{
-				InnerReconciler: fakeReconciler{},
-				Client:          c,
-				Log:             ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+			r := Reconciler{
+				Endpoint: fakeEndpoint{},
+				Context: ctx.Context{
+					Client: c,
+					Log:    ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+				},
 			}
 
 			_, err = r.Reconcile(req)
@@ -270,21 +292,27 @@ var _ = Describe("TwoPhase", func() {
 
 			c := fake.NewFakeClientWithScheme(scheme.Scheme, &chaos)
 
-			r := twophase.Reconciler{
-				InnerReconciler: fakeReconciler{},
-				Client:          c,
-				Log:             ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+			r := Reconciler{
+				Endpoint: fakeEndpoint{},
+				Context: ctx.Context{
+					Client: c,
+					Log:    ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+				},
 			}
 
 			_, err = r.Reconcile(req)
 
 			Expect(err).ToNot(HaveOccurred())
 			_chaos := r.Object()
-			err = r.Get(context.TODO(), req.NamespacedName, _chaos)
+			err = r.Client.Get(context.TODO(), req.NamespacedName, _chaos)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(_chaos.(twophase.InnerSchedulerObject).GetStatus().Experiment.Phase).To(Equal(v1alpha1.ExperimentPhaseFinished))
+			Expect(_chaos.(v1alpha1.InnerSchedulerObject).GetStatus().Experiment.Phase).To(Equal(v1alpha1.ExperimentPhaseFinished))
 
 			defer mock.With("MockRecoverError", errors.New("RecoverError"))()
+
+			chaos.Status.Experiment.Phase = v1alpha1.ExperimentPhaseRunning
+			err := c.Update(context.TODO(), &chaos)
+			Expect(err).NotTo(HaveOccurred())
 
 			_, err = r.Reconcile(req)
 
@@ -300,22 +328,25 @@ var _ = Describe("TwoPhase", func() {
 			}
 
 			chaos.SetNextRecover(pastTime)
+			chaos.SetNextStart(futureTime)
 
 			c := fake.NewFakeClientWithScheme(scheme.Scheme, &chaos)
 
-			r := twophase.Reconciler{
-				InnerReconciler: fakeReconciler{},
-				Client:          c,
-				Log:             ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+			r := Reconciler{
+				Endpoint: fakeEndpoint{},
+				Context: ctx.Context{
+					Client: c,
+					Log:    ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+				},
 			}
 
 			_, err = r.Reconcile(req)
 
 			Expect(err).ToNot(HaveOccurred())
 			_chaos := r.Object()
-			err = r.Get(context.TODO(), req.NamespacedName, _chaos)
+			err = r.Client.Get(context.TODO(), req.NamespacedName, _chaos)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(_chaos.(twophase.InnerSchedulerObject).GetStatus().Experiment.Phase).To(Equal(v1alpha1.ExperimentPhaseFinished))
+			Expect(_chaos.(v1alpha1.InnerSchedulerObject).GetStatus().Experiment.Phase).To(Equal(v1alpha1.ExperimentPhaseWaiting))
 		})
 
 		It("TwoPhase ToRecover Error", func() {
@@ -327,13 +358,17 @@ var _ = Describe("TwoPhase", func() {
 
 			defer mock.With("MockRecoverError", errors.New("RecoverError"))()
 			chaos.SetNextRecover(pastTime)
+			chaos.SetNextStart(futureTime)
+			chaos.Status.Experiment.Phase = v1alpha1.ExperimentPhaseRunning
 
 			c := fake.NewFakeClientWithScheme(scheme.Scheme, &chaos)
 
-			r := twophase.Reconciler{
-				InnerReconciler: fakeReconciler{},
-				Client:          c,
-				Log:             ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+			r := Reconciler{
+				Endpoint: fakeEndpoint{},
+				Context: ctx.Context{
+					Client: c,
+					Log:    ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+				},
 			}
 
 			_, err = r.Reconcile(req)
@@ -354,19 +389,69 @@ var _ = Describe("TwoPhase", func() {
 
 			c := fake.NewFakeClientWithScheme(scheme.Scheme, &chaos)
 
-			r := twophase.Reconciler{
-				InnerReconciler: fakeReconciler{},
-				Client:          c,
-				Log:             ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+			r := Reconciler{
+				Endpoint: fakeEndpoint{},
+				Context: ctx.Context{
+					Client: c,
+					Log:    ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+				},
 			}
 
 			_, err = r.Reconcile(req)
 
 			Expect(err).ToNot(HaveOccurred())
 			_chaos := r.Object()
-			err = r.Get(context.TODO(), req.NamespacedName, _chaos)
+			err = r.Client.Get(context.TODO(), req.NamespacedName, _chaos)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(_chaos.(twophase.InnerSchedulerObject).GetStatus().Experiment.Phase).To(Equal(v1alpha1.ExperimentPhaseRunning))
+			Expect(_chaos.(v1alpha1.InnerSchedulerObject).GetStatus().Experiment.Phase).To(Equal(v1alpha1.ExperimentPhaseRunning))
+		})
+
+		It("TwoPhase ToApplyAgain", func() {
+			chaos := fakeTwoPhaseChaos{
+				TypeMeta:   typeMeta,
+				ObjectMeta: objectMeta,
+				Scheduler:  &v1alpha1.SchedulerSpec{Cron: "@hourly"},
+			}
+
+			chaos.SetNextRecover(futureTime)
+			chaos.SetNextStart(pastTime)
+
+			c := fake.NewFakeClientWithScheme(scheme.Scheme, &chaos)
+
+			r := Reconciler{
+				Endpoint: fakeEndpoint{},
+				Context: ctx.Context{
+					Client: c,
+					Log:    ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+				},
+			}
+
+			_, err = r.Reconcile(req)
+
+			Expect(err).ToNot(HaveOccurred())
+			_chaos := r.Object()
+			err = r.Client.Get(context.TODO(), req.NamespacedName, _chaos)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(_chaos.(v1alpha1.InnerSchedulerObject).GetStatus().Experiment.Phase).To(Equal(v1alpha1.ExperimentPhaseRunning))
+
+			chaos.Status.Experiment.StartTime = &metav1.Time{Time: pastTime}
+			chaos.Scheduler = &v1alpha1.SchedulerSpec{Cron: "@every 20h"}
+			chaos.SetNextStart(futureTime)
+			_ = c.Update(context.TODO(), &chaos)
+
+			_, err = r.Reconcile(req)
+			Expect(err).ToNot(HaveOccurred())
+			err = r.Client.Get(context.TODO(), req.NamespacedName, _chaos)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(_chaos.(v1alpha1.InnerSchedulerObject).GetStatus().Experiment.Phase).To(Equal(v1alpha1.ExperimentPhaseRunning))
+			d, _ := time.ParseDuration("10h")
+			exp := time.Now().Add(d)
+			Expect(chaos.NextStart.Time.Year()).To(Equal(exp.Year()))
+			Expect(chaos.NextStart.Time.Month()).To(Equal(exp.Month()))
+			Expect(chaos.NextStart.Time.Day()).To(Equal(exp.Day()))
+			Expect(chaos.NextStart.Time.Hour()).To(Equal(exp.Hour()))
+			Expect(chaos.NextStart.Time.Minute()).To(Equal(exp.Minute()))
+			Expect(exp.Second()-chaos.NextStart.Time.Second() < 2).To(Equal(true))
 		})
 
 		It("TwoPhase ToApply Error", func() {
@@ -381,10 +466,12 @@ var _ = Describe("TwoPhase", func() {
 
 			c := fake.NewFakeClientWithScheme(scheme.Scheme, &chaos)
 
-			r := twophase.Reconciler{
-				InnerReconciler: fakeReconciler{},
-				Client:          c,
-				Log:             ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+			r := Reconciler{
+				Endpoint: fakeEndpoint{},
+				Context: ctx.Context{
+					Client: c,
+					Log:    ctrl.Log.WithName("controllers").WithName("TwoPhase"),
+				},
 			}
 
 			defer mock.With("MockApplyError", errors.New("ApplyError"))()

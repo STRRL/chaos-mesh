@@ -7,7 +7,47 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - chaosmesh.pingcap.com
+  - chaos-mesh.org
+  resources:
+  - dnschaos
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - chaos-mesh.org
+  resources:
+  - dnschaos/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - chaos-mesh.org
+  resources:
+  - httpchaos
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - chaos-mesh.org
+  resources:
+  - httpchaos/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - chaos-mesh.org
   resources:
   - iochaos
   verbs:
@@ -19,7 +59,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - chaosmesh.pingcap.com
+  - chaos-mesh.org
   resources:
   - iochaos/status
   verbs:
@@ -27,7 +67,7 @@ rules:
   - patch
   - update
 - apiGroups:
-  - pingcap.com
+  - chaos-mesh.org
   resources:
   - kernelchaos
   verbs:
@@ -39,7 +79,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - pingcap.com
+  - chaos-mesh.org
   resources:
   - kernelchaos/status
   verbs:
@@ -47,7 +87,7 @@ rules:
   - patch
   - update
 - apiGroups:
-  - pingcap.com
+  - chaos-mesh.org
   resources:
   - networkchaos
   verbs:
@@ -59,7 +99,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - pingcap.com
+  - chaos-mesh.org
   resources:
   - networkchaos/status
   verbs:
@@ -67,7 +107,7 @@ rules:
   - patch
   - update
 - apiGroups:
-  - pingcap.com
+  - chaos-mesh.org
   resources:
   - podchaos
   verbs:
@@ -79,7 +119,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - pingcap.com
+  - chaos-mesh.org
   resources:
   - podchaos/status
   verbs:
@@ -87,7 +127,27 @@ rules:
   - patch
   - update
 - apiGroups:
-  - pingcap.com
+  - chaos-mesh.org
+  resources:
+  - stresschaos
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - chaos-mesh.org
+  resources:
+  - stresschaos/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - chaos-mesh.org
   resources:
   - timechaos
   verbs:
@@ -99,7 +159,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - pingcap.com
+  - chaos-mesh.org
   resources:
   - timechaos/status
   verbs:

@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,67 +17,44 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"time"
 
 	"github.com/go-logr/logr"
 	"golang.org/x/sync/errgroup"
 	v1 "k8s.io/api/core/v1"
-	k8serror "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	kubeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/pingcap/chaos-mesh/api/v1alpha1"
-	"github.com/pingcap/chaos-mesh/controllers/common"
-	"github.com/pingcap/chaos-mesh/controllers/reconciler"
-	"github.com/pingcap/chaos-mesh/controllers/twophase"
-	chaosdaemon "github.com/pingcap/chaos-mesh/pkg/chaosdaemon/pb"
-	"github.com/pingcap/chaos-mesh/pkg/utils"
+	"github.com/chaos-mesh/chaos-mesh/api/v1alpha1"
+	"github.com/chaos-mesh/chaos-mesh/controllers/config"
+	"github.com/chaos-mesh/chaos-mesh/controllers/recover"
+	"github.com/chaos-mesh/chaos-mesh/pkg/chaosdaemon/client"
+	chaosdaemon "github.com/chaos-mesh/chaos-mesh/pkg/chaosdaemon/pb"
+	"github.com/chaos-mesh/chaos-mesh/pkg/events"
+	"github.com/chaos-mesh/chaos-mesh/pkg/finalizer"
+	"github.com/chaos-mesh/chaos-mesh/pkg/router"
+	ctx "github.com/chaos-mesh/chaos-mesh/pkg/router/context"
+	end "github.com/chaos-mesh/chaos-mesh/pkg/router/endpoint"
+	"github.com/chaos-mesh/chaos-mesh/pkg/selector"
+	timeUtils "github.com/chaos-mesh/chaos-mesh/pkg/time/utils"
 )
 
 const timeChaosMsg = "time is shifted with %v"
 
-// Reconciler is time-chaos reconciler
-type Reconciler struct {
-	client.Client
-	record.EventRecorder
+// endpoint is time-chaos reconciler
+type endpoint struct {
+	ctx.Context
+}
+
+type recoverer struct {
+	kubeclient.Client
 	Log logr.Logger
 }
 
-// Reconcile reconciles a TimeChaos resource
-func (r *Reconciler) Reconcile(req ctrl.Request, chaos *v1alpha1.TimeChaos) (ctrl.Result, error) {
-	r.Log.Info("Reconciling timechaos")
-	scheduler := chaos.GetScheduler()
-	duration, err := chaos.GetDuration()
-	if err != nil {
-		r.Log.Error(err, fmt.Sprintf("unable to get timechaos[%s/%s]'s duration", chaos.Namespace, chaos.Name))
-		return ctrl.Result{}, err
-	}
-	if scheduler == nil && duration == nil {
-		return r.commonTimeChaos(chaos, req)
-	} else if scheduler != nil && duration != nil {
-		return r.scheduleTimeChaos(chaos, req)
-	}
-
-	// This should be ensured by admission webhook in the future
-	r.Log.Error(fmt.Errorf("timechaos[%s/%s] spec invalid", chaos.Namespace, chaos.Name), "scheduler and duration should be omitted or defined at the same time")
-	return ctrl.Result{}, fmt.Errorf("invalid scheduler and duration")
-}
-
-func (r *Reconciler) commonTimeChaos(timechaos *v1alpha1.TimeChaos, req ctrl.Request) (ctrl.Result, error) {
-	cr := common.NewReconciler(r, r.Client, r.Log)
-	return cr.Reconcile(req)
-}
-
-func (r *Reconciler) scheduleTimeChaos(timechaos *v1alpha1.TimeChaos, req ctrl.Request) (ctrl.Result, error) {
-	sr := twophase.NewReconciler(r, r.Client, r.Log)
-	return sr.Reconcile(req)
-}
-
 // Apply applies time-chaos
-func (r *Reconciler) Apply(ctx context.Context, req ctrl.Request, chaos reconciler.InnerObject) error {
+func (r *endpoint) Apply(ctx context.Context, req ctrl.Request, chaos v1alpha1.InnerObject) error {
 	timechaos, ok := chaos.(*v1alpha1.TimeChaos)
 	if !ok {
 		err := errors.New("chaos is not timechaos")
@@ -87,21 +64,19 @@ func (r *Reconciler) Apply(ctx context.Context, req ctrl.Request, chaos reconcil
 
 	timechaos.SetDefaultValue()
 
-	pods, err := utils.SelectAndFilterPods(ctx, r.Client, &timechaos.Spec)
+	pods, err := selector.SelectAndFilterPods(ctx, r.Client, r.Reader, &timechaos.Spec, config.ControllerCfg.ClusterScoped, config.ControllerCfg.TargetNamespace, config.ControllerCfg.AllowedNamespaces, config.ControllerCfg.IgnoredNamespaces)
 
 	if err != nil {
 		r.Log.Error(err, "failed to select and filter pods")
 		return err
 	}
 
-	err = r.applyAllPods(ctx, pods, timechaos)
-	if err != nil {
+	if err = r.applyAllPods(ctx, pods, timechaos); err != nil {
 		r.Log.Error(err, "failed to apply chaos on all pods")
 		return err
 	}
 
-	timechaos.Status.Experiment.Pods = []v1alpha1.PodStatus{}
-
+	timechaos.Status.Experiment.PodRecords = make([]v1alpha1.PodStatus, 0, len(pods))
 	for _, pod := range pods {
 		ps := v1alpha1.PodStatus{
 			Namespace: pod.Namespace,
@@ -111,14 +86,14 @@ func (r *Reconciler) Apply(ctx context.Context, req ctrl.Request, chaos reconcil
 			Message:   fmt.Sprintf(timeChaosMsg, timechaos.Spec.TimeOffset),
 		}
 
-		timechaos.Status.Experiment.Pods = append(timechaos.Status.Experiment.Pods, ps)
+		timechaos.Status.Experiment.PodRecords = append(timechaos.Status.Experiment.PodRecords, ps)
 	}
-	r.Event(timechaos, v1.EventTypeNormal, utils.EventChaosInjected, "")
+	r.Event(timechaos, v1.EventTypeNormal, events.ChaosInjected, "")
 	return nil
 }
 
 // Recover means the reconciler recovers the chaos action
-func (r *Reconciler) Recover(ctx context.Context, req ctrl.Request, chaos reconciler.InnerObject) error {
+func (r *endpoint) Recover(ctx context.Context, req ctrl.Request, chaos v1alpha1.InnerObject) error {
 	timechaos, ok := chaos.(*v1alpha1.TimeChaos)
 	if !ok {
 		err := errors.New("chaos is not TimeChaos")
@@ -126,57 +101,24 @@ func (r *Reconciler) Recover(ctx context.Context, req ctrl.Request, chaos reconc
 		return err
 	}
 
-	err := r.cleanFinalizersAndRecover(ctx, timechaos)
+	rd := recover.Delegate{Client: r.Client, Log: r.Log, RecoverIntf: &recoverer{r.Client, r.Log}}
+
+	finalizers, err := rd.CleanFinalizersAndRecover(ctx, chaos, timechaos.Finalizers, timechaos.Annotations)
 	if err != nil {
 		return err
 	}
-	r.Event(timechaos, v1.EventTypeNormal, utils.EventChaosRecovered, "")
+	timechaos.Finalizers = finalizers
+	r.Event(timechaos, v1.EventTypeNormal, events.ChaosRecovered, "")
 
 	return nil
 }
 
-func (r *Reconciler) cleanFinalizersAndRecover(ctx context.Context, chaos *v1alpha1.TimeChaos) error {
-	if len(chaos.Finalizers) == 0 {
-		return nil
-	}
-
-	for _, key := range chaos.Finalizers {
-		ns, name, err := cache.SplitMetaNamespaceKey(key)
-		if err != nil {
-			return err
-		}
-
-		var pod v1.Pod
-		err = r.Get(ctx, types.NamespacedName{
-			Namespace: ns,
-			Name:      name,
-		}, &pod)
-
-		if err != nil {
-			if !k8serror.IsNotFound(err) {
-				return err
-			}
-
-			r.Log.Info("Pod not found", "namespace", ns, "name", name)
-			chaos.Finalizers = utils.RemoveFromFinalizer(chaos.Finalizers, key)
-			continue
-		}
-
-		err = r.recoverPod(ctx, &pod, chaos)
-		if err != nil {
-			return err
-		}
-
-		chaos.Finalizers = utils.RemoveFromFinalizer(chaos.Finalizers, key)
-	}
-
-	return nil
-}
-
-func (r *Reconciler) recoverPod(ctx context.Context, pod *v1.Pod, chaos *v1alpha1.TimeChaos) error {
+func (r *recoverer) RecoverPod(ctx context.Context, pod *v1.Pod, somechaos v1alpha1.InnerObject) error {
+	// judged type in `Recover` already so no need to judge again
+	chaos, _ := somechaos.(*v1alpha1.TimeChaos)
 	r.Log.Info("Try to recover pod", "namespace", pod.Namespace, "name", pod.Name)
 
-	pbClient, err := utils.NewChaosDaemonClient(ctx, r.Client, pod, os.Getenv("CHAOS_DAEMON_PORT"))
+	pbClient, err := client.NewChaosDaemonClient(ctx, r.Client, pod, config.ControllerCfg.ChaosDaemonPort)
 	if err != nil {
 		return err
 	}
@@ -212,7 +154,7 @@ func (r *Reconciler) recoverPod(ctx context.Context, pod *v1.Pod, chaos *v1alpha
 	return g.Wait()
 }
 
-func (r *Reconciler) recoverContainer(ctx context.Context, client chaosdaemon.ChaosDaemonClient, containerID string) error {
+func (r *recoverer) recoverContainer(ctx context.Context, client chaosdaemon.ChaosDaemonClient, containerID string) error {
 	r.Log.Info("Try to recover time on container", "id", containerID)
 
 	_, err := client.RecoverTimeOffset(ctx, &chaosdaemon.TimeRequest{
@@ -223,11 +165,11 @@ func (r *Reconciler) recoverContainer(ctx context.Context, client chaosdaemon.Ch
 }
 
 // Object would return the instance of chaos
-func (r *Reconciler) Object() reconciler.InnerObject {
+func (r *endpoint) Object() v1alpha1.InnerObject {
 	return &v1alpha1.TimeChaos{}
 }
 
-func (r *Reconciler) applyAllPods(ctx context.Context, pods []v1.Pod, chaos *v1alpha1.TimeChaos) error {
+func (r *endpoint) applyAllPods(ctx context.Context, pods []v1.Pod, chaos *v1alpha1.TimeChaos) error {
 	g := errgroup.Group{}
 	for index := range pods {
 		pod := &pods[index]
@@ -236,7 +178,7 @@ func (r *Reconciler) applyAllPods(ctx context.Context, pods []v1.Pod, chaos *v1a
 		if err != nil {
 			return err
 		}
-		chaos.Finalizers = utils.InsertFinalizer(chaos.Finalizers, key)
+		chaos.Finalizers = finalizer.InsertFinalizer(chaos.Finalizers, key)
 
 		g.Go(func() error {
 			return r.applyPod(ctx, pod, chaos)
@@ -246,10 +188,10 @@ func (r *Reconciler) applyAllPods(ctx context.Context, pods []v1.Pod, chaos *v1a
 	return g.Wait()
 }
 
-func (r *Reconciler) applyPod(ctx context.Context, pod *v1.Pod, chaos *v1alpha1.TimeChaos) error {
+func (r *endpoint) applyPod(ctx context.Context, pod *v1.Pod, chaos *v1alpha1.TimeChaos) error {
 	r.Log.Info("Try to shift time on pod", "namespace", pod.Namespace, "name", pod.Name)
 
-	pbClient, err := utils.NewChaosDaemonClient(ctx, r.Client, pod, os.Getenv("CHAOS_DAEMON_PORT"))
+	pbClient, err := client.NewChaosDaemonClient(ctx, r.Client, pod, config.ControllerCfg.ChaosDaemonPort)
 	if err != nil {
 		return err
 	}
@@ -277,21 +219,45 @@ func (r *Reconciler) applyPod(ctx context.Context, pod *v1.Pod, chaos *v1alpha1.
 	return g.Wait()
 }
 
-func (r *Reconciler) applyContainer(ctx context.Context, client chaosdaemon.ChaosDaemonClient, containerID string, chaos *v1alpha1.TimeChaos) error {
+func (r *endpoint) applyContainer(ctx context.Context, client chaosdaemon.ChaosDaemonClient, containerID string, chaos *v1alpha1.TimeChaos) error {
 	r.Log.Info("Try to shift time on container", "id", containerID)
 
-	mask, err := utils.EncodeClkIds(chaos.Spec.ClockIds)
+	mask, err := timeUtils.EncodeClkIds(chaos.Spec.ClockIds)
 	if err != nil {
 		return err
 	}
 
-	r.Log.Info("setting time shift", "mask", mask, "sec", chaos.Spec.TimeOffset.Sec, "nsec", chaos.Spec.TimeOffset.NSec)
+	duration, err := time.ParseDuration(chaos.Spec.TimeOffset)
+	if err != nil {
+		return err
+	}
+
+	sec, nsec := secAndNSecFromDuration(duration)
+
+	r.Log.Info("setting time shift", "mask", mask, "sec", sec, "nsec", nsec)
 	_, err = client.SetTimeOffset(ctx, &chaosdaemon.TimeRequest{
 		ContainerId: containerID,
-		Sec:         chaos.Spec.TimeOffset.Sec,
-		Nsec:        chaos.Spec.TimeOffset.NSec,
+		Sec:         sec,
+		Nsec:        nsec,
 		ClkIdsMask:  mask,
 	})
 
 	return err
+}
+
+func secAndNSecFromDuration(duration time.Duration) (sec int64, nsec int64) {
+	sec = duration.Nanoseconds() / 1e9
+	nsec = duration.Nanoseconds() - (sec * 1e9)
+
+	return
+}
+
+func init() {
+	router.Register("timechaos", &v1alpha1.TimeChaos{}, func(obj runtime.Object) bool {
+		return true
+	}, func(ctx ctx.Context) end.Endpoint {
+		return &endpoint{
+			Context: ctx,
+		}
+	})
 }

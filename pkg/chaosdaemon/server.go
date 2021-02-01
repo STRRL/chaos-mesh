@@ -1,4 +1,4 @@
-// Copyright 2019 PingCAP, Inc.
+// Copyright 2019 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/moby/locker"
+
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/prometheus/client_golang/prometheus"
@@ -26,8 +28,9 @@ import (
 	"google.golang.org/grpc/reflection"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	pb "github.com/pingcap/chaos-mesh/pkg/chaosdaemon/pb"
-	"github.com/pingcap/chaos-mesh/pkg/utils"
+	"github.com/chaos-mesh/chaos-mesh/pkg/bpm"
+	pb "github.com/chaos-mesh/chaos-mesh/pkg/chaosdaemon/pb"
+	grpcUtils "github.com/chaos-mesh/chaos-mesh/pkg/grpc"
 )
 
 var log = ctrl.Log.WithName("chaos-daemon-server")
@@ -43,20 +46,40 @@ type Config struct {
 	Profiling bool
 }
 
-// Server represents a grpc server for tc daemon
-type daemonServer struct {
-	crClient ContainerRuntimeInfoClient
+// Get the http address
+func (c *Config) HttpAddr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.HTTPPort)
 }
 
-func newDaemonServer(containerRuntime string) (*daemonServer, error) {
+// Get the grpc address
+func (c *Config) GrpcAddr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.GRPCPort)
+}
+
+// DaemonServer represents a grpc server for tc daemon
+type DaemonServer struct {
+	crClient                 ContainerRuntimeInfoClient
+	backgroundProcessManager bpm.BackgroundProcessManager
+
+	IPSetLocker *locker.Locker
+}
+
+func newDaemonServer(containerRuntime string) (*DaemonServer, error) {
 	crClient, err := CreateContainerRuntimeInfoClient(containerRuntime)
 	if err != nil {
 		return nil, err
 	}
 
-	return &daemonServer{
-		crClient: crClient,
-	}, nil
+	return NewDaemonServerWithCRClient(crClient), nil
+}
+
+// NewDaemonServerWithCRClient returns DaemonServer with container runtime client
+func NewDaemonServerWithCRClient(crClient ContainerRuntimeInfoClient) *DaemonServer {
+	return &DaemonServer{
+		IPSetLocker:              locker.New(),
+		crClient:                 crClient,
+		backgroundProcessManager: bpm.NewBackgroundProcessManager(),
+	}
 }
 
 func newGRPCServer(containerRuntime string, reg prometheus.Registerer) (*grpc.Server, error) {
@@ -73,7 +96,7 @@ func newGRPCServer(containerRuntime string, reg prometheus.Registerer) (*grpc.Se
 
 	grpcOpts := []grpc.ServerOption{
 		grpc_middleware.WithUnaryServerChain(
-			utils.TimeoutServerInterceptor,
+			grpcUtils.TimeoutServerInterceptor,
 			grpcMetrics.UnaryServerInterceptor(),
 		),
 	}
@@ -95,20 +118,17 @@ type RegisterGatherer interface {
 
 // StartServer starts chaos-daemon.
 func StartServer(conf *Config, reg RegisterGatherer) error {
-	g := errgroup.Group{}
+	g := &errgroup.Group{}
 
-	httpBindAddr := fmt.Sprintf("%s:%d", conf.Host, conf.HTTPPort)
-	srv := newHTTPServerBuilder().Addr(httpBindAddr).Metrics(reg).Profiling(conf.Profiling).Build()
+	httpBindAddr := conf.HttpAddr()
+	httpServer := newHTTPServerBuilder().Addr(httpBindAddr).Metrics(reg).Profiling(conf.Profiling).Build()
 
-	g.Go(func() error {
-		log.Info("Starting http endpoint", "address", httpBindAddr)
-		if err := srv.ListenAndServe(); err != nil {
-			log.Error(err, "failed to start http endpoint")
-			srv.Shutdown(context.Background())
-			return err
-		}
-		return nil
-	})
+	grpcBindAddr := conf.GrpcAddr()
+	grpcListener, err := net.Listen("tcp", grpcBindAddr)
+	if err != nil {
+		log.Error(err, "failed to listen grpc address", "grpcBindAddr", grpcBindAddr)
+		return err
+	}
 
 	grpcServer, err := newGRPCServer(conf.Runtime, reg)
 	if err != nil {
@@ -116,16 +136,19 @@ func StartServer(conf *Config, reg RegisterGatherer) error {
 		return err
 	}
 
-	grpcBindAddr := fmt.Sprintf("%s:%d", conf.Host, conf.GRPCPort)
-	lis, err := net.Listen("tcp", grpcBindAddr)
-	if err != nil {
-		log.Error(err, "failed to listen grpc address")
-		return err
-	}
+	g.Go(func() error {
+		log.Info("Starting http endpoint", "address", httpBindAddr)
+		if err := httpServer.ListenAndServe(); err != nil {
+			log.Error(err, "failed to start http endpoint")
+			httpServer.Shutdown(context.Background())
+			return err
+		}
+		return nil
+	})
 
 	g.Go(func() error {
 		log.Info("Starting grpc endpoint", "address", grpcBindAddr, "runtime", conf.Runtime)
-		if err := grpcServer.Serve(lis); err != nil {
+		if err := grpcServer.Serve(grpcListener); err != nil {
 			log.Error(err, "failed to start grpc endpoint")
 			grpcServer.Stop()
 			return err

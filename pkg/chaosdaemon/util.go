@@ -1,4 +1,4 @@
-// Copyright 2019 PingCAP, Inc.
+// Copyright 2019 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"sync"
 	"syscall"
@@ -28,8 +27,8 @@ import (
 	"github.com/docker/docker/api/types"
 	dockerclient "github.com/docker/docker/client"
 
-	"github.com/pingcap/chaos-mesh/pkg/mock"
-	"github.com/pingcap/chaos-mesh/pkg/utils"
+	"github.com/chaos-mesh/chaos-mesh/pkg/bpm"
+	"github.com/chaos-mesh/chaos-mesh/pkg/mock"
 )
 
 const (
@@ -43,14 +42,13 @@ const (
 	defaultContainerdSocket  = "/run/containerd/containerd.sock"
 	containerdProtocolPrefix = "containerd://"
 	containerdDefaultNS      = "k8s.io"
-
-	defaultProcPrefix = "/proc"
 )
 
 // ContainerRuntimeInfoClient represents a struct which can give you information about container runtime
 type ContainerRuntimeInfoClient interface {
 	GetPidFromContainerID(ctx context.Context, containerID string) (uint32, error)
 	ContainerKillByContainerID(ctx context.Context, containerID string) error
+	FormatContainerID(ctx context.Context, containerID string) (string, error)
 }
 
 // DockerClientInterface represents the DockerClient, it's used to simply unit test
@@ -64,17 +62,30 @@ type DockerClient struct {
 	client DockerClientInterface
 }
 
-// GetPidFromContainerID fetches PID according to container id
-func (c DockerClient) GetPidFromContainerID(ctx context.Context, containerID string) (uint32, error) {
+// FormatContainerID strips protocol prefix from the container ID
+func (c DockerClient) FormatContainerID(ctx context.Context, containerID string) (string, error) {
 	if len(containerID) < len(dockerProtocolPrefix) {
-		return 0, fmt.Errorf("container id %s is not a docker container id", containerID)
+		return "", fmt.Errorf("container id %s is not a docker container id", containerID)
 	}
 	if containerID[0:len(dockerProtocolPrefix)] != dockerProtocolPrefix {
-		return 0, fmt.Errorf("expected %s but got %s", dockerProtocolPrefix, containerID[0:len(dockerProtocolPrefix)])
+		return "", fmt.Errorf("expected %s but got %s", dockerProtocolPrefix, containerID[0:len(dockerProtocolPrefix)])
 	}
-	container, err := c.client.ContainerInspect(ctx, containerID[len(dockerProtocolPrefix):])
+	return containerID[len(dockerProtocolPrefix):], nil
+}
+
+// GetPidFromContainerID fetches PID according to container id
+func (c DockerClient) GetPidFromContainerID(ctx context.Context, containerID string) (uint32, error) {
+	id, err := c.FormatContainerID(ctx, containerID)
 	if err != nil {
 		return 0, err
+	}
+	container, err := c.client.ContainerInspect(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+
+	if container.State.Pid == 0 {
+		return 0, fmt.Errorf("container is not running, status: %s", container.State.Status)
 	}
 
 	return uint32(container.State.Pid), nil
@@ -90,15 +101,24 @@ type ContainerdClient struct {
 	client ContainerdClientInterface
 }
 
-// GetPidFromContainerID fetches PID according to container id
-func (c ContainerdClient) GetPidFromContainerID(ctx context.Context, containerID string) (uint32, error) {
+// FormatContainerID strips protocol prefix from the container ID
+func (c ContainerdClient) FormatContainerID(ctx context.Context, containerID string) (string, error) {
 	if len(containerID) < len(containerdProtocolPrefix) {
-		return 0, fmt.Errorf("container id %s is not a containerd container id", containerID)
+		return "", fmt.Errorf("container id %s is not a containerd container id", containerID)
 	}
 	if containerID[0:len(containerdProtocolPrefix)] != containerdProtocolPrefix {
-		return 0, fmt.Errorf("expected %s but got %s", containerdProtocolPrefix, containerID[0:len(containerdProtocolPrefix)])
+		return "", fmt.Errorf("expected %s but got %s", containerdProtocolPrefix, containerID[0:len(containerdProtocolPrefix)])
 	}
-	container, err := c.client.LoadContainer(ctx, containerID[len(containerdProtocolPrefix):])
+	return containerID[len(containerdProtocolPrefix):], nil
+}
+
+// GetPidFromContainerID fetches PID according to container id
+func (c ContainerdClient) GetPidFromContainerID(ctx context.Context, containerID string) (uint32, error) {
+	id, err := c.FormatContainerID(ctx, containerID)
+	if err != nil {
+		return 0, err
+	}
+	container, err := c.client.LoadContainer(ctx, id)
 	if err != nil {
 		return 0, err
 	}
@@ -165,28 +185,6 @@ func CreateContainerRuntimeInfoClient(containerRuntime string) (ContainerRuntime
 	return cli, nil
 }
 
-// GetNetnsPath returns network namespace path
-func GenNetnsPath(pid uint32) string {
-	return fmt.Sprintf("%s/%d/ns/net", defaultProcPrefix, pid)
-}
-
-func f(x interface{}) *exec.Cmd {
-	return x.(func(...interface{}) *exec.Cmd)(1, "")
-}
-
-func withNetNS(ctx context.Context, nsPath string, cmd string, args ...string) *exec.Cmd {
-	// Mock point to return mock Cmd in unit test
-	if c := mock.On("MockWithNetNs"); c != nil {
-		f := c.(func(context.Context, string, string, ...string) *exec.Cmd)
-		return f(ctx, nsPath, cmd, args...)
-	}
-
-	// BusyBox's nsenter is very confusing. This usage is found by several attempts
-	args = append([]string{"-n" + nsPath, "--", cmd}, args...)
-
-	return exec.CommandContext(ctx, "nsenter", args...)
-}
-
 // ContainerKillByContainerID kills container according to container id
 func (c DockerClient) ContainerKillByContainerID(ctx context.Context, containerID string) error {
 	if len(containerID) < len(dockerProtocolPrefix) {
@@ -223,9 +221,26 @@ func (c ContainerdClient) ContainerKillByContainerID(ctx context.Context, contai
 	return err
 }
 
+// ReadCommName returns the command name of process
+func ReadCommName(pid int) (string, error) {
+	f, err := os.Open(fmt.Sprintf("%s/%d/comm", bpm.DefaultProcPrefix, pid))
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	b, err := ioutil.ReadAll(f)
+	if err != nil {
+		return "", err
+	}
+
+	return string(b), nil
+}
+
 // GetChildProcesses will return all child processes's pid. Include all generations.
+// only return error when /proc/pid/tasks cannot be read
 func GetChildProcesses(ppid uint32) ([]uint32, error) {
-	procs, err := ioutil.ReadDir(defaultProcPrefix)
+	procs, err := ioutil.ReadDir(bpm.DefaultProcPrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +262,7 @@ func GetChildProcesses(ppid uint32) ([]uint32, error) {
 				continue
 			}
 
-			statusPath := defaultProcPrefix + "/" + proc.Name() + "/stat"
+			statusPath := bpm.DefaultProcPrefix + "/" + proc.Name() + "/stat"
 
 			wg.Add(1)
 			go func() {
@@ -258,6 +273,7 @@ func GetChildProcesses(ppid uint32) ([]uint32, error) {
 					log.Error(err, "read status file error", "path", statusPath)
 					return
 				}
+				defer reader.Close()
 
 				var (
 					pid    uint32
@@ -279,7 +295,7 @@ func GetChildProcesses(ppid uint32) ([]uint32, error) {
 		done <- true
 	}()
 
-	processGraph := utils.NewGraph()
+	processGraph := NewGraph()
 	for {
 		select {
 		case pair := <-pairs:
@@ -288,4 +304,8 @@ func GetChildProcesses(ppid uint32) ([]uint32, error) {
 			return processGraph.Flatten(ppid), nil
 		}
 	}
+}
+
+func encodeOutputToError(output []byte, err error) error {
+	return fmt.Errorf("error code: %v, msg: %s", err, string(output))
 }

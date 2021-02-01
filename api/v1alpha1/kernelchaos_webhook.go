@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,22 +18,14 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	ctrl "sigs.k8s.io/controller-runtime"
-	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 // log is for logging in this package.
 var kernelchaoslog = logf.Log.WithName("kernelchaos-resource")
 
-// SetupWebhookWithManager setup KernelChaos's webhook with manager
-func (in *KernelChaos) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(in).
-		Complete()
-}
-
-// +kubebuilder:webhook:path=/mutate-pingcap-com-v1alpha1-kernelchaos,mutating=true,failurePolicy=fail,groups=pingcap.com,resources=kernelchaos,verbs=create;update,versions=v1alpha1,name=mkernelchaos.kb.io
+// +kubebuilder:webhook:path=/mutate-chaos-mesh-org-v1alpha1-kernelchaos,mutating=true,failurePolicy=fail,groups=chaos-mesh.org,resources=kernelchaos,verbs=create;update,versions=v1alpha1,name=mkernelchaos.kb.io
 
 var _ webhook.Defaulter = &KernelChaos{}
 
@@ -44,7 +36,7 @@ func (in *KernelChaos) Default() {
 	in.Spec.Selector.DefaultNamespace(in.GetNamespace())
 }
 
-// +kubebuilder:webhook:verbs=create;update,path=/validate-pingcap-com-v1alpha1-kernelchaos,mutating=false,failurePolicy=fail,groups=pingcap.com,resources=kernelchaos,versions=v1alpha1,name=vkernelchaos.kb.io
+// +kubebuilder:webhook:verbs=create;update,path=/validate-chaos-mesh-org-v1alpha1-kernelchaos,mutating=false,failurePolicy=fail,groups=chaos-mesh.org,resources=kernelchaos,versions=v1alpha1,name=vkernelchaos.kb.io
 
 var _ ChaosValidator = &KernelChaos{}
 
@@ -71,25 +63,21 @@ func (in *KernelChaos) ValidateDelete() error {
 // Validate validates chaos object
 func (in *KernelChaos) Validate() error {
 	specField := field.NewPath("spec")
-	errLst := in.ValidateScheduler(specField)
+	allErrs := in.ValidateScheduler(specField)
+	allErrs = append(allErrs, in.ValidatePodMode(specField)...)
 
-	if len(errLst) > 0 {
-		return fmt.Errorf(errLst.ToAggregate().Error())
+	if len(allErrs) > 0 {
+		return fmt.Errorf(allErrs.ToAggregate().Error())
 	}
 	return nil
 }
 
 // ValidateScheduler validates the scheduler and duration
-func (in *KernelChaos) ValidateScheduler(root *field.Path) field.ErrorList {
-	if in.Spec.Duration != nil && in.Spec.Scheduler != nil {
-		return nil
-	} else if in.Spec.Duration == nil && in.Spec.Scheduler == nil {
-		return nil
-	}
+func (in *KernelChaos) ValidateScheduler(spec *field.Path) field.ErrorList {
+	return ValidateScheduler(in, spec)
+}
 
-	allErrs := field.ErrorList{}
-	schedulerField := root.Child("scheduler")
-
-	allErrs = append(allErrs, field.Invalid(schedulerField, in.Spec.Scheduler, ValidateSchedulerError))
-	return allErrs
+// ValidatePodMode validates the value with podmode
+func (in *KernelChaos) ValidatePodMode(spec *field.Path) field.ErrorList {
+	return ValidatePodMode(in.Spec.Value, in.Spec.Mode, spec.Child("value"))
 }

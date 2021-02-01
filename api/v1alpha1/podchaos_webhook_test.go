@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -127,6 +127,22 @@ var _ = Describe("podchaos_webhook", func() {
 						ObjectMeta: metav1.ObjectMeta{
 							Namespace: metav1.NamespaceDefault,
 							Name:      "foo6",
+						},
+					},
+					execute: func(chaos *PodChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate the ContainerName",
+					chaos: PodChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo7",
+						},
+						Spec: PodChaosSpec{
+							Action: ContainerKillAction,
 						},
 					},
 					execute: func(chaos *PodChaos) error {

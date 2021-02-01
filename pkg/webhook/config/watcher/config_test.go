@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,8 +22,23 @@ var _ = Describe("webhook config watcher", func() {
 	Context("Test webhook config", func() {
 		It("should return NewConfig", func() {
 			config := NewConfig()
-			Expect(config.Namespace).To(Equal(""))
-			Expect(config.ConfigMapLabels).To(Equal(map[string]string{}))
+			Expect(config.TemplateNamespace).To(Equal(""))
+			Expect(config.TargetNamespace).To(Equal(""))
+			Expect(config.ConfigLabels).To(Equal(map[string]string{}))
+			Expect(config.TemplateLabels).To(Equal(map[string]string{}))
+		})
+
+		It("verift the parameter", func() {
+			config := NewConfig()
+			Expect(config.Verify()).Should(HaveOccurred())
+
+			config.TemplateLabels = make(map[string]string)
+			config.TemplateLabels["bar"] = "foo"
+			Expect(config.Verify()).Should(HaveOccurred())
+
+			config.ConfigLabels = make(map[string]string)
+			config.ConfigLabels["bar"] = "foo"
+			Expect(config.Verify()).ShouldNot(HaveOccurred())
 		})
 
 	})

@@ -1,4 +1,4 @@
-// Copyright 2019 PingCAP, Inc.
+// Copyright 2019 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,8 +19,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/pingcap/chaos-mesh/pkg/chaosdaemon"
-	"github.com/pingcap/chaos-mesh/pkg/version"
+	"github.com/chaos-mesh/chaos-mesh/pkg/chaosdaemon"
+	"github.com/chaos-mesh/chaos-mesh/pkg/fusedev"
+	"github.com/chaos-mesh/chaos-mesh/pkg/version"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -50,7 +51,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	ctrl.SetLogger(zap.Logger(true))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(
@@ -58,7 +59,13 @@ func main() {
 		prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}),
 	)
 
-	if err := chaosdaemon.StartServer(conf, reg); err != nil {
+	log.Info("grant access to /dev/fuse")
+	err := fusedev.GrantAccess()
+	if err != nil {
+		log.Error(err, "fail to grant access to /dev/fuse")
+	}
+
+	if err = chaosdaemon.StartServer(conf, reg); err != nil {
 		log.Error(err, "failed to start chaos-daemon server")
 		os.Exit(1)
 	}

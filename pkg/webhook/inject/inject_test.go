@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,7 +19,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/pingcap/chaos-mesh/pkg/webhook/config"
+	controllerCfg "github.com/chaos-mesh/chaos-mesh/pkg/config"
+	"github.com/chaos-mesh/chaos-mesh/pkg/webhook/config"
 
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -32,7 +33,8 @@ var _ = Describe("webhook inject", func() {
 		It("should return unexpected end of JSON input", func() {
 			var testClient client.Client
 			var cfg *config.Config
-			res := Inject(&admissionv1beta1.AdmissionRequest{}, testClient, cfg)
+			var controllerCfg *controllerCfg.ChaosControllerConfig
+			res := Inject(&admissionv1beta1.AdmissionRequest{}, testClient, cfg, controllerCfg, nil)
 			Expect(res.Result.Message).To(ContainSubstring("unexpected end of JSON input"))
 		})
 	})
@@ -86,7 +88,8 @@ var _ = Describe("webhook inject", func() {
 			metadata.Namespace = "kube-system"
 			var cli client.Client
 			var cfg config.Config
-			str, flag := injectRequired(&metadata, cli, &cfg)
+			var controllerCfg controllerCfg.ChaosControllerConfig
+			str, flag := injectRequired(&metadata, cli, &cfg, &controllerCfg)
 			Expect(str).To(Equal(""))
 			Expect(flag).To(Equal(false))
 		})
@@ -96,9 +99,10 @@ var _ = Describe("webhook inject", func() {
 			metadata.Annotations = make(map[string]string)
 			metadata.Annotations["testNamespace/status"] = StatusInjected
 			var cfg config.Config
+			var controllerCfg controllerCfg.ChaosControllerConfig
 			cfg.AnnotationNamespace = "testNamespace"
 			var cli client.Client
-			str, flag := injectRequired(&metadata, cli, &cfg)
+			str, flag := injectRequired(&metadata, cli, &cfg, &controllerCfg)
 			Expect(str).To(Equal(""))
 			Expect(flag).To(Equal(false))
 		})
@@ -108,9 +112,10 @@ var _ = Describe("webhook inject", func() {
 			metadata.Annotations = make(map[string]string)
 			metadata.Annotations["testNamespace/status"] = StatusInjected
 			var cfg config.Config
+			var controllerCfg controllerCfg.ChaosControllerConfig
 			cfg.AnnotationNamespace = "testNamespace"
 			var cli client.Client
-			str, flag := injectRequired(&metadata, cli, &cfg)
+			str, flag := injectRequired(&metadata, cli, &cfg, &controllerCfg)
 			Expect(str).To(Equal(""))
 			Expect(flag).To(Equal(false))
 		})
@@ -121,8 +126,9 @@ var _ = Describe("webhook inject", func() {
 			metadata.Annotations["testNamespace/request"] = "test"
 			metadata.Namespace = "testNamespace"
 			var cfg config.Config
+			var controllerCfg controllerCfg.ChaosControllerConfig
 			cfg.AnnotationNamespace = "testNamespace"
-			str, flag := injectRequired(&metadata, k8sClient, &cfg)
+			str, flag := injectRequired(&metadata, k8sClient, &cfg, &controllerCfg)
 			Expect(str).To(Equal("test"))
 			Expect(flag).To(Equal(true))
 		})
@@ -131,7 +137,8 @@ var _ = Describe("webhook inject", func() {
 			var metadata metav1.ObjectMeta
 			metadata.Annotations = make(map[string]string)
 			var cfg config.Config
-			_, flag := injectRequired(&metadata, k8sClient, &cfg)
+			var controllerCfg controllerCfg.ChaosControllerConfig
+			_, flag := injectRequired(&metadata, k8sClient, &cfg, &controllerCfg)
 			Expect(flag).To(Equal(false))
 		})
 	})
@@ -162,7 +169,7 @@ var _ = Describe("webhook inject", func() {
 	Context("setCommands", func() {
 		It("should return", func() {
 			var target []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name: "testContainerName",
 				}}
 			var postStart map[string]config.ExecAction
@@ -173,7 +180,7 @@ var _ = Describe("webhook inject", func() {
 
 		It("should return nil", func() {
 			var target []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name: "testContainerName",
 				}}
 			var postStart map[string]config.ExecAction
@@ -190,11 +197,11 @@ var _ = Describe("webhook inject", func() {
 	Context("setEnvironment", func() {
 		It("should return not nil", func() {
 			var target []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name: "testContainerName",
 				}}
 			var addEnv []corev1.EnvVar = []corev1.EnvVar{
-				corev1.EnvVar{
+				{
 					Name: "testContainerName",
 				}}
 			patch := setEnvironment(target, addEnv)
@@ -203,16 +210,16 @@ var _ = Describe("webhook inject", func() {
 
 		It("should return not nil", func() {
 			var Env []corev1.EnvVar = []corev1.EnvVar{
-				corev1.EnvVar{
+				{
 					Name: "_testContainerName_",
 				}}
 			var target []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name: "testContainerName",
 					Env:  Env,
 				}}
 			var addEnv []corev1.EnvVar = []corev1.EnvVar{
-				corev1.EnvVar{
+				{
 					Name: "testContainerName",
 				}}
 			patch := setEnvironment(target, addEnv)
@@ -221,16 +228,16 @@ var _ = Describe("webhook inject", func() {
 
 		It("should return nil", func() {
 			var Env []corev1.EnvVar = []corev1.EnvVar{
-				corev1.EnvVar{
+				{
 					Name: "testContainerName",
 				}}
 			var target []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name: "testContainerName",
 					Env:  Env,
 				}}
 			var addEnv []corev1.EnvVar = []corev1.EnvVar{
-				corev1.EnvVar{
+				{
 					Name: "testContainerName",
 				}}
 			patch := setEnvironment(target, addEnv)
@@ -241,11 +248,11 @@ var _ = Describe("webhook inject", func() {
 	Context("addContainers", func() {
 		It("should return not nil", func() {
 			var target []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name: "testContainerName",
 				}}
 			var added []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name: "testContainerName",
 				}}
 			basePath := "/test"
@@ -256,7 +263,7 @@ var _ = Describe("webhook inject", func() {
 		It("should return not nil", func() {
 			var target []corev1.Container = []corev1.Container{}
 			var added []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name: "testContainerName",
 				}}
 			basePath := "/test"
@@ -268,11 +275,11 @@ var _ = Describe("webhook inject", func() {
 	Context("addVolumes", func() {
 		It("should return not nil", func() {
 			var target []corev1.Volume = []corev1.Volume{
-				corev1.Volume{
+				{
 					Name: "test",
 				}}
 			var added []corev1.Volume = []corev1.Volume{
-				corev1.Volume{
+				{
 					Name: "test",
 				}}
 			basePath := "/test"
@@ -283,7 +290,7 @@ var _ = Describe("webhook inject", func() {
 		It("should return not nil", func() {
 			var target []corev1.Volume = []corev1.Volume{}
 			var added []corev1.Volume = []corev1.Volume{
-				corev1.Volume{
+				{
 					Name: "test",
 				}}
 			basePath := "/test"
@@ -295,16 +302,16 @@ var _ = Describe("webhook inject", func() {
 	Context("setVolumeMounts", func() {
 		It("should return not nil", func() {
 			var vm []corev1.VolumeMount = []corev1.VolumeMount{
-				corev1.VolumeMount{
+				{
 					Name: "test",
 				}}
 			var target []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name:         "test",
 					VolumeMounts: vm,
 				}}
 			var added []corev1.VolumeMount = []corev1.VolumeMount{
-				corev1.VolumeMount{
+				{
 					Name: "test",
 				}}
 			basePath := "/test"
@@ -316,11 +323,11 @@ var _ = Describe("webhook inject", func() {
 	Context("addHostAliases", func() {
 		It("should return not nil", func() {
 			var target []corev1.HostAlias = []corev1.HostAlias{
-				corev1.HostAlias{
+				{
 					IP: "testip",
 				}}
 			var added []corev1.HostAlias = []corev1.HostAlias{
-				corev1.HostAlias{
+				{
 					IP: "testip",
 				}}
 			basePath := "/test"
@@ -331,7 +338,7 @@ var _ = Describe("webhook inject", func() {
 		It("should return not nil", func() {
 			var target []corev1.HostAlias = []corev1.HostAlias{}
 			var added []corev1.HostAlias = []corev1.HostAlias{
-				corev1.HostAlias{
+				{
 					IP: "testip",
 				}}
 			basePath := "/test"
@@ -343,11 +350,11 @@ var _ = Describe("webhook inject", func() {
 	Context("mergeEnvVars", func() {
 		It("should return not nil", func() {
 			var envs []corev1.EnvVar = []corev1.EnvVar{
-				corev1.EnvVar{
+				{
 					Name: "test",
 				}}
 			var containers []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name: "test",
 				}}
 			mutatedContainers := mergeEnvVars(envs, containers)
@@ -356,15 +363,15 @@ var _ = Describe("webhook inject", func() {
 
 		It("should return not nil", func() {
 			var envs []corev1.EnvVar = []corev1.EnvVar{
-				corev1.EnvVar{
+				{
 					Name: "test",
 				}}
 			var env []corev1.EnvVar = []corev1.EnvVar{
-				corev1.EnvVar{
+				{
 					Name: "test",
 				}}
 			var containers []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name: "test",
 					Env:  env,
 				}}
@@ -376,11 +383,11 @@ var _ = Describe("webhook inject", func() {
 	Context("mergeVolumeMounts", func() {
 		It("should return not nil", func() {
 			var volumeMounts []corev1.VolumeMount = []corev1.VolumeMount{
-				corev1.VolumeMount{
+				{
 					Name: "test",
 				}}
 			var containers []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name: "test",
 				}}
 			mutatedContainers := mergeVolumeMounts(volumeMounts, containers)
@@ -389,15 +396,15 @@ var _ = Describe("webhook inject", func() {
 
 		It("should return not nil", func() {
 			var volumeMounts []corev1.VolumeMount = []corev1.VolumeMount{
-				corev1.VolumeMount{
+				{
 					Name: "test",
 				}}
 			var vm []corev1.VolumeMount = []corev1.VolumeMount{
-				corev1.VolumeMount{
+				{
 					Name: "test",
 				}}
 			var containers []corev1.Container = []corev1.Container{
-				corev1.Container{
+				{
 					Name:         "test",
 					VolumeMounts: vm,
 				}}

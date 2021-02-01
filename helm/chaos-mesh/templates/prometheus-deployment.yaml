@@ -3,6 +3,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  namespace: {{ .Release.Namespace }}
   name: chaos-prometheus
   labels:
     app.kubernetes.io/name: {{ template "chaos-mesh.name" . }}
@@ -31,6 +32,14 @@ spec:
       {{- if .Values.prometheus.serviceAccount }}
       serviceAccount: {{ .Values.prometheus.serviceAccount }}
       {{- end }}
+      priorityClassName: {{ .Values.prometheus.priorityClassName}}
+      initContainers:
+        - name: data-permission-fix
+          image: busybox
+          command: ["/bin/chmod","-R","777", "/data"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
       containers:
       - name: prometheus
         image: {{ .Values.prometheus.image }}
@@ -84,6 +93,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  namespace: {{ .Release.Namespace }}
   name: prometheus-pvc
 spec:
   {{- if .Values.prometheus.volume.storageClassName }}

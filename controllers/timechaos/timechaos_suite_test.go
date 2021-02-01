@@ -1,4 +1,17 @@
-package timechaos_test
+// Copyright 2020 Chaos Mesh Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package timechaos
 
 import (
 	"context"
@@ -19,10 +32,11 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/pingcap/chaos-mesh/api/v1alpha1"
-	. "github.com/pingcap/chaos-mesh/controllers/test"
-	. "github.com/pingcap/chaos-mesh/controllers/timechaos"
-	"github.com/pingcap/chaos-mesh/pkg/mock"
+	"github.com/chaos-mesh/chaos-mesh/api/v1alpha1"
+	. "github.com/chaos-mesh/chaos-mesh/controllers/test"
+	"github.com/chaos-mesh/chaos-mesh/pkg/mock"
+	ctx "github.com/chaos-mesh/chaos-mesh/pkg/router/context"
+	. "github.com/chaos-mesh/chaos-mesh/pkg/testutils"
 )
 
 func TestTimechaos(t *testing.T) {
@@ -46,15 +60,7 @@ var _ = AfterSuite(func() {
 
 var _ = Describe("TimeChaos", func() {
 	Context("TimeChaos", func() {
-		podObjects, pods := GenerateNPods(
-			"p",
-			1,
-			v1.PodRunning,
-			metav1.NamespaceDefault,
-			nil,
-			map[string]string{"l1": "l1"},
-			v1.ContainerStatus{ContainerID: "fake-container-id"},
-		)
+		podObjects, pods := GenerateNPods("p", 1, PodArg{})
 
 		duration := "invalid_duration"
 
@@ -67,16 +73,18 @@ var _ = Describe("TimeChaos", func() {
 				Mode:       v1alpha1.AllPodMode,
 				Value:      "0",
 				Selector:   v1alpha1.SelectorSpec{Namespaces: []string{metav1.NamespaceDefault}},
-				TimeOffset: v1alpha1.TimeOffset{},
+				TimeOffset: "0s0ns",
 				Duration:   &duration,
 				Scheduler:  nil,
 			},
 		}
 
-		r := Reconciler{
-			Client:        fake.NewFakeClientWithScheme(scheme.Scheme, podObjects...),
-			EventRecorder: &record.FakeRecorder{},
-			Log:           ctrl.Log.WithName("controllers").WithName("TimeChaos"),
+		r := endpoint{
+			Context: ctx.Context{
+				Client:        fake.NewFakeClientWithScheme(scheme.Scheme, podObjects...),
+				EventRecorder: &record.FakeRecorder{},
+				Log:           ctrl.Log.WithName("controllers").WithName("TimeChaos"),
+			},
 		}
 
 		It("TimeChaos Apply", func() {

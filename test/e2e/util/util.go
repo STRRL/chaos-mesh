@@ -1,7 +1,29 @@
+// Copyright 2020 Chaos Mesh Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package util
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"time"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -11,11 +33,13 @@ import (
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	aggregatorclientset "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/test/e2e/framework"
+
+	"github.com/chaos-mesh/chaos-mesh/api/v1alpha1"
 )
 
-// WaitForAPIServicesAvaiable waits for apiservices to be available
-func WaitForAPIServicesAvaiable(client aggregatorclientset.Interface, selector labels.Selector) error {
-	isAvaiable := func(status apiregistrationv1.APIServiceStatus) bool {
+// WaitForAPIServicesAvailable waits for apiservices to be available
+func WaitForAPIServicesAvailable(client aggregatorclientset.Interface, selector labels.Selector) error {
+	isAvailable := func(status apiregistrationv1.APIServiceStatus) bool {
 		if status.Conditions == nil {
 			return false
 		}
@@ -34,7 +58,7 @@ func WaitForAPIServicesAvaiable(client aggregatorclientset.Interface, selector l
 			return false, err
 		}
 		for _, apiService := range apiServiceList.Items {
-			if !isAvaiable(apiService.Status) {
+			if !isAvailable(apiService.Status) {
 				framework.Logf("APIService %q is not available yet", apiService.Name)
 				return false, nil
 			}
@@ -48,7 +72,7 @@ func WaitForAPIServicesAvaiable(client aggregatorclientset.Interface, selector l
 
 // WaitForCRDsEstablished waits for all CRDs to be established
 func WaitForCRDsEstablished(client apiextensionsclientset.Interface, selector labels.Selector) error {
-	isEstalbished := func(status apiextensionsv1beta1.CustomResourceDefinitionStatus) bool {
+	isEstablished := func(status apiextensionsv1beta1.CustomResourceDefinitionStatus) bool {
 		if status.Conditions == nil {
 			return false
 		}
@@ -67,13 +91,59 @@ func WaitForCRDsEstablished(client apiextensionsclientset.Interface, selector la
 			return false, err
 		}
 		for _, crd := range crdList.Items {
-			if !isEstalbished(crd.Status) {
+			if !isEstablished(crd.Status) {
 				framework.Logf("CRD %q is not established yet", crd.Name)
 				return false, nil
 			}
 		}
 		for _, crd := range crdList.Items {
 			framework.Logf("CRD %q is established", crd.Name)
+		}
+		return true, nil
+	})
+}
+
+// WaitDeploymentReady waits for all pods which controlled by deployment to be ready.
+func WaitDeploymentReady(name, namespace string, cli kubernetes.Interface) error {
+	return wait.Poll(2*time.Second, 5*time.Minute, func() (done bool, err error) {
+		d, err := cli.AppsV1().Deployments(namespace).Get(name, metav1.GetOptions{})
+		if err != nil {
+			return false, nil
+		}
+		if d.Status.AvailableReplicas != *d.Spec.Replicas {
+			return false, nil
+		}
+		if d.Status.UpdatedReplicas != *d.Spec.Replicas {
+			return false, nil
+		}
+		return true, nil
+	})
+}
+
+func PauseChaos(ctx context.Context, cli client.Client, chaos runtime.Object) error {
+	var mergePatch []byte
+	mergePatch, _ = json.Marshal(map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"annotations": map[string]string{v1alpha1.PauseAnnotationKey: "true"},
+		},
+	})
+	return cli.Patch(ctx, chaos, client.ConstantPatch(types.MergePatchType, mergePatch))
+}
+
+func UnPauseChaos(ctx context.Context, cli client.Client, chaos runtime.Object) error {
+	var mergePatch []byte
+	mergePatch, _ = json.Marshal(map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"annotations": map[string]string{v1alpha1.PauseAnnotationKey: "false"},
+		},
+	})
+	return cli.Patch(ctx, chaos, client.ConstantPatch(types.MergePatchType, mergePatch))
+}
+
+func WaitE2EHelperReady(c http.Client, port uint16) error {
+	return wait.Poll(2*time.Second, 5*time.Minute, func() (done bool, err error) {
+		if _, err = c.Get(fmt.Sprintf("http://localhost:%d/ping", port)); err != nil {
+			return false, nil
 		}
 		return true, nil
 	})

@@ -1,4 +1,4 @@
-// Copyright 2019 PingCAP, Inc.
+// Copyright 2019 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,176 +15,222 @@ package partition
 
 import (
 	"context"
-	"crypto/sha1"
 	"errors"
 	"fmt"
-	"os"
 
-	"github.com/go-logr/logr"
-	"golang.org/x/sync/errgroup"
+	"github.com/hashicorp/go-multierror"
 	v1 "k8s.io/api/core/v1"
-	k8sError "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/pingcap/chaos-mesh/api/v1alpha1"
-	"github.com/pingcap/chaos-mesh/controllers/common"
-	"github.com/pingcap/chaos-mesh/controllers/reconciler"
-	"github.com/pingcap/chaos-mesh/controllers/twophase"
-	pb "github.com/pingcap/chaos-mesh/pkg/chaosdaemon/pb"
-	"github.com/pingcap/chaos-mesh/pkg/utils"
+	"github.com/chaos-mesh/chaos-mesh/api/v1alpha1"
+	"github.com/chaos-mesh/chaos-mesh/controllers/common"
+	"github.com/chaos-mesh/chaos-mesh/controllers/config"
+	"github.com/chaos-mesh/chaos-mesh/controllers/networkchaos/podnetworkchaosmanager"
+	"github.com/chaos-mesh/chaos-mesh/controllers/podnetworkchaos/ipset"
+	"github.com/chaos-mesh/chaos-mesh/controllers/podnetworkchaos/iptable"
+	"github.com/chaos-mesh/chaos-mesh/controllers/podnetworkchaos/netutils"
+	pb "github.com/chaos-mesh/chaos-mesh/pkg/chaosdaemon/pb"
+	"github.com/chaos-mesh/chaos-mesh/pkg/events"
+	"github.com/chaos-mesh/chaos-mesh/pkg/finalizer"
+	"github.com/chaos-mesh/chaos-mesh/pkg/router"
+	ctx "github.com/chaos-mesh/chaos-mesh/pkg/router/context"
+	end "github.com/chaos-mesh/chaos-mesh/pkg/router/endpoint"
+	"github.com/chaos-mesh/chaos-mesh/pkg/selector"
 )
 
 const (
-	networkPartitionActionMsg = "partition network duration %s"
+	networkPartitionActionMsg = " partition network duration %s"
+	networkChaosSourceMsg     = "This is a source pod."
+	networkChaosTargetMsg     = "This is a target pod."
 
-	sourceIpSetPostFix = "src"
-	targetIpSetPostFix = "tgt"
+	sourceIPSetPostFix = "src"
+	targetIPSetPostFix = "tgt"
 )
 
-func newReconciler(c client.Client, log logr.Logger, req ctrl.Request,
-	recorder record.EventRecorder) twophase.Reconciler {
-	return twophase.Reconciler{
-		InnerReconciler: &Reconciler{
-			Client:        c,
-			EventRecorder: recorder,
-			Log:           log,
-		},
-		Client: c,
-		Log:    log,
-	}
-}
-
-// NewTwoPhaseReconciler would create Reconciler for twophase package
-func NewTwoPhaseReconciler(c client.Client, log logr.Logger, req ctrl.Request,
-	recorder record.EventRecorder) *twophase.Reconciler {
-	r := newReconciler(c, log, req, recorder)
-	return twophase.NewReconciler(r, r.Client, r.Log)
-}
-
-// NewCommonReconciler would create Reconciler for common package
-func NewCommonReconciler(c client.Client, log logr.Logger, req ctrl.Request,
-	recorder record.EventRecorder) *common.Reconciler {
-	r := newReconciler(c, log, req, recorder)
-	return common.NewReconciler(r, r.Client, r.Log)
-}
-
-type Reconciler struct {
-	client.Client
-	record.EventRecorder
-	Log logr.Logger
+type endpoint struct {
+	ctx.Context
 }
 
 // Object implements the reconciler.InnerReconciler.Object
-func (r *Reconciler) Object() reconciler.InnerObject {
+func (e *endpoint) Object() v1alpha1.InnerObject {
 	return &v1alpha1.NetworkChaos{}
 }
 
-// Apply implements the reconciler.InnerReconciler.Apply
-func (r *Reconciler) Apply(ctx context.Context, req ctrl.Request, chaos reconciler.InnerObject) error {
-	r.Log.Info("Applying network partition")
+// Apply applies the chaos operation
+func (e *endpoint) Apply(ctx context.Context, req ctrl.Request, chaos v1alpha1.InnerObject) error {
+	e.Log.Info("Applying network partition")
 
 	networkchaos, ok := chaos.(*v1alpha1.NetworkChaos)
 	if !ok {
 		err := errors.New("chaos is not NetworkChaos")
-		r.Log.Error(err, "chaos is not NetworkChaos", "chaos", chaos)
+		e.Log.Error(err, "chaos is not NetworkChaos", "chaos", chaos)
 
 		return err
 	}
 
-	sources, err := utils.SelectAndFilterPods(ctx, r.Client, &networkchaos.Spec)
+	source := networkchaos.Namespace + "/" + networkchaos.Name
+	m := podnetworkchaosmanager.New(source, e.Log, e.Client)
+
+	sources, err := selector.SelectAndFilterPods(ctx, e.Client, e.Reader, &networkchaos.Spec, config.ControllerCfg.ClusterScoped, config.ControllerCfg.TargetNamespace, config.ControllerCfg.AllowedNamespaces, config.ControllerCfg.IgnoredNamespaces)
 
 	if err != nil {
-		r.Log.Error(err, "failed to select and filter pods")
+		e.Log.Error(err, "failed to select and filter source pods")
 		return err
 	}
 
-	targets, err := utils.SelectAndFilterPods(ctx, r.Client, &networkchaos.Spec.Target)
+	var targets []v1.Pod
 
+	if networkchaos.Spec.Target != nil {
+		targets, err = selector.SelectAndFilterPods(ctx, e.Client, e.Reader, networkchaos.Spec.Target, config.ControllerCfg.ClusterScoped, config.ControllerCfg.TargetNamespace, config.ControllerCfg.AllowedNamespaces, config.ControllerCfg.IgnoredNamespaces)
+		if err != nil {
+			e.Log.Error(err, "failed to select and filter target pods")
+			return err
+		}
+	}
+
+	sourceSet := ipset.BuildIPSet(sources, []string{}, networkchaos, sourceIPSetPostFix, source)
+	externalCidrs, err := netutils.ResolveCidrs(networkchaos.Spec.ExternalTargets)
 	if err != nil {
-		r.Log.Error(err, "failed to select and filter pods")
+		e.Log.Error(err, "failed to resolve external targets")
 		return err
 	}
-
-	sourceSet := r.generateSet(sources, networkchaos, sourceIpSetPostFix)
-	targetSet := r.generateSet(targets, networkchaos, targetIpSetPostFix)
+	targetSet := ipset.BuildIPSet(targets, externalCidrs, networkchaos, targetIPSetPostFix, source)
 
 	allPods := append(sources, targets...)
 
+	type podPositionTuple struct {
+		Pod      v1.Pod
+		Position string
+	}
+	keyPodMap := make(map[types.NamespacedName]podPositionTuple)
+	for index, pod := range allPods {
+		position := ""
+		if index < len(sources) {
+			position = "source"
+		} else {
+			position = "target"
+		}
+		keyPodMap[types.NamespacedName{
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+		}] = podPositionTuple{
+			Pod:      pod,
+			Position: position,
+		}
+	}
+
 	// Set up ipset in every related pods
-	g := errgroup.Group{}
 	for index := range allPods {
 		pod := allPods[index]
-		r.Log.Info("PODS", "name", pod.Name, "namespace", pod.Namespace)
-		g.Go(func() error {
-			err := r.flushPodIPSet(ctx, &pod, sourceSet, networkchaos)
-			if err != nil {
-				return err
-			}
+		e.Log.Info("PODS", "name", pod.Name, "namespace", pod.Namespace)
 
-			r.Log.Info("Flush ipset on pod", "name", pod.Name, "namespace", pod.Namespace)
-			return r.flushPodIPSet(ctx, &pod, targetSet, networkchaos)
+		t := m.WithInit(types.NamespacedName{
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+		})
+
+		t.Append(sourceSet)
+		t.Append(targetSet)
+	}
+
+	sourcesChains := []v1alpha1.RawIptables{}
+	targetsChains := []v1alpha1.RawIptables{}
+	if networkchaos.Spec.Direction == v1alpha1.To || networkchaos.Spec.Direction == v1alpha1.Both {
+		sourcesChains = append(sourcesChains, v1alpha1.RawIptables{
+			Name:      iptable.GenerateName(pb.Chain_OUTPUT, networkchaos),
+			Direction: v1alpha1.Output,
+			IPSets:    []string{targetSet.Name},
+			RawRuleSource: v1alpha1.RawRuleSource{
+				Source: source,
+			},
+		})
+
+		targetsChains = append(targetsChains, v1alpha1.RawIptables{
+			Name:      iptable.GenerateName(pb.Chain_INPUT, networkchaos),
+			Direction: v1alpha1.Input,
+			IPSets:    []string{sourceSet.Name},
+			RawRuleSource: v1alpha1.RawRuleSource{
+				Source: source,
+			},
 		})
 	}
 
-	if err = g.Wait(); err != nil {
-		r.Log.Error(err, "flush pod ipset error")
+	if networkchaos.Spec.Direction == v1alpha1.From || networkchaos.Spec.Direction == v1alpha1.Both {
+		sourcesChains = append(sourcesChains, v1alpha1.RawIptables{
+			Name:      iptable.GenerateName(pb.Chain_INPUT, networkchaos),
+			Direction: v1alpha1.Input,
+			IPSets:    []string{targetSet.Name},
+			RawRuleSource: v1alpha1.RawRuleSource{
+				Source: source,
+			},
+		})
+
+		targetsChains = append(targetsChains, v1alpha1.RawIptables{
+			Name:      iptable.GenerateName(pb.Chain_OUTPUT, networkchaos),
+			Direction: v1alpha1.Output,
+			IPSets:    []string{sourceSet.Name},
+			RawRuleSource: v1alpha1.RawRuleSource{
+				Source: source,
+			},
+		})
+	}
+	e.Log.Info("chains prepared", "sourcesChains", sourcesChains, "targetsChains", targetsChains)
+
+	err = e.SetChains(ctx, sources, sourcesChains, m, networkchaos)
+	if err != nil {
 		return err
 	}
 
-	if networkchaos.Spec.Direction == v1alpha1.To || networkchaos.Spec.Direction == v1alpha1.Both {
-		if err := r.BlockSet(ctx, sources, targetSet, pb.Rule_OUTPUT, networkchaos); err != nil {
-			r.Log.Error(err, "set source iptables failed")
-			return err
-		}
-
-		if err := r.BlockSet(ctx, targets, sourceSet, pb.Rule_INPUT, networkchaos); err != nil {
-			r.Log.Error(err, "set target iptables failed")
-			return err
-		}
+	err = e.SetChains(ctx, targets, targetsChains, m, networkchaos)
+	if err != nil {
+		return err
 	}
 
-	if networkchaos.Spec.Direction == v1alpha1.From || networkchaos.Spec.Direction == v1alpha1.Both {
-		if err := r.BlockSet(ctx, sources, targetSet, pb.Rule_INPUT, networkchaos); err != nil {
-			r.Log.Error(err, "set source iptables failed")
+	responses := m.Commit(ctx)
+
+	networkchaos.Status.Experiment.PodRecords = make([]v1alpha1.PodStatus, 0, len(allPods))
+	for _, keyErrorTuple := range responses {
+		key := keyErrorTuple.Key
+		err := keyErrorTuple.Err
+		if err != nil {
+			if err != podnetworkchaosmanager.ErrPodNotFound && err != podnetworkchaosmanager.ErrPodNotRunning {
+				e.Log.Error(err, "fail to commit")
+			} else {
+				e.Log.Info("pod is not found or not running", "key", key)
+			}
 			return err
 		}
 
-		if err := r.BlockSet(ctx, targets, sourceSet, pb.Rule_OUTPUT, networkchaos); err != nil {
-			r.Log.Error(err, "set target iptables failed")
-			return err
-		}
-	}
-
-	networkchaos.Status.Experiment.Pods = []v1alpha1.PodStatus{}
-
-	for _, pod := range allPods {
+		pod := keyPodMap[keyErrorTuple.Key]
 		ps := v1alpha1.PodStatus{
-			Namespace: pod.Namespace,
-			Name:      pod.Name,
-			HostIP:    pod.Status.HostIP,
-			PodIP:     pod.Status.PodIP,
+			Namespace: pod.Pod.Namespace,
+			Name:      pod.Pod.Name,
+			HostIP:    pod.Pod.Status.HostIP,
+			PodIP:     pod.Pod.Status.PodIP,
 			Action:    string(networkchaos.Spec.Action),
 		}
-
-		if networkchaos.Spec.Duration != nil {
-			ps.Message = fmt.Sprintf(networkPartitionActionMsg, *networkchaos.Spec.Duration)
+		if pod.Position == "source" {
+			ps.Message = networkChaosSourceMsg
+		} else {
+			ps.Message = networkChaosTargetMsg
 		}
 
-		networkchaos.Status.Experiment.Pods = append(networkchaos.Status.Experiment.Pods, ps)
+		// TODO: add source, target and tc action message
+		if networkchaos.Spec.Duration != nil {
+			ps.Message += fmt.Sprintf(networkPartitionActionMsg, *networkchaos.Spec.Duration)
+		}
+		networkchaos.Status.Experiment.PodRecords = append(networkchaos.Status.Experiment.PodRecords, ps)
 	}
 
-	r.Event(networkchaos, v1.EventTypeNormal, utils.EventChaosInjected, "")
+	e.Event(networkchaos, v1.EventTypeNormal, events.ChaosInjected, "")
 	return nil
 }
 
-func (r *Reconciler) BlockSet(ctx context.Context, pods []v1.Pod, set pb.IpSet, direction pb.Rule_Direction, networkchaos *v1alpha1.NetworkChaos) error {
-	g := errgroup.Group{}
-	sourceRule := r.generateIPTables(pb.Rule_ADD, direction, set.Name)
-
+// SetChains sets iptables chains for pods
+func (e *endpoint) SetChains(ctx context.Context, pods []v1.Pod, chains []v1alpha1.RawIptables, m *podnetworkchaosmanager.PodNetworkManager, networkchaos *v1alpha1.NetworkChaos) error {
 	for index := range pods {
 		pod := &pods[index]
 
@@ -193,196 +239,95 @@ func (r *Reconciler) BlockSet(ctx context.Context, pods []v1.Pod, set pb.IpSet, 
 			return err
 		}
 
-		switch direction {
-		case pb.Rule_INPUT:
-			networkchaos.Finalizers = utils.InsertFinalizer(networkchaos.Finalizers, "input-"+key)
-		case pb.Rule_OUTPUT:
-			networkchaos.Finalizers = utils.InsertFinalizer(networkchaos.Finalizers, "output"+key)
+		t := m.WithInit(types.NamespacedName{
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+		})
+		for _, chain := range chains {
+			t.Append(chain)
 		}
 
-		g.Go(func() error {
-			return r.sendIPTables(ctx, pod, sourceRule, networkchaos)
-		})
+		networkchaos.Finalizers = finalizer.InsertFinalizer(networkchaos.Finalizers, key)
+
 	}
-	return g.Wait()
+	return nil
 }
 
-// Recover implements the reconciler.InnerReconciler.Recover
-func (r *Reconciler) Recover(ctx context.Context, req ctrl.Request, chaos reconciler.InnerObject) error {
+// Recover means the reconciler recovers the chaos action
+func (e *endpoint) Recover(ctx context.Context, req ctrl.Request, chaos v1alpha1.InnerObject) error {
 	networkchaos, ok := chaos.(*v1alpha1.NetworkChaos)
 	if !ok {
 		err := errors.New("chaos is not NetworkChaos")
-		r.Log.Error(err, "chaos is not NetworkChaos", "chaos", chaos)
-
+		e.Log.Error(err, "chaos is not NetworkChaos", "chaos", chaos)
 		return err
 	}
 
-	err := r.cleanFinalizersAndRecover(ctx, networkchaos)
-	if err != nil {
-		r.Log.Error(err, "cleanFinalizersAndRecover failed")
+	if err := e.cleanFinalizersAndRecover(ctx, networkchaos); err != nil {
 		return err
 	}
-	r.Event(networkchaos, v1.EventTypeNormal, utils.EventChaosRecovered, "")
+	e.Event(networkchaos, v1.EventTypeNormal, events.ChaosRecovered, "")
 
 	return nil
 }
 
-func (r *Reconciler) generateSetName(networkchaos *v1alpha1.NetworkChaos, namePostFix string) string {
-	r.Log.Info("Generating name for chaos", "name", networkchaos.Name)
-	originalName := networkchaos.Name
+func (e *endpoint) cleanFinalizersAndRecover(ctx context.Context, chaos *v1alpha1.NetworkChaos) error {
+	var result error
 
-	var ipsetName string
-	if len(originalName) < 6 {
-		ipsetName = originalName + "_" + namePostFix
-	} else {
-		namePrefix := originalName[0:5]
-		nameRest := originalName[5:]
+	source := chaos.Namespace + "/" + chaos.Name
+	m := podnetworkchaosmanager.New(source, e.Log, e.Client)
 
-		hasher := sha1.New()
-		hasher.Write([]byte(nameRest))
-		hashValue := fmt.Sprintf("%x", hasher.Sum(nil))
-
-		// keep the length does not exceed 27
-		ipsetName = namePrefix + "_" + hashValue[0:17] + "_" + namePostFix
-	}
-
-	r.Log.Info("Name generated", "ipsetName", ipsetName)
-	return ipsetName
-}
-
-func (r *Reconciler) generateSet(pods []v1.Pod, networkchaos *v1alpha1.NetworkChaos, namePostFix string) pb.IpSet {
-	name := r.generateSetName(networkchaos, namePostFix)
-	ips := make([]string, 0, len(pods))
-
-	for _, pod := range pods {
-		if len(pod.Status.PodIP) > 0 {
-			ips = append(ips, pod.Status.PodIP)
-		}
-	}
-
-	r.Log.Info("Creating ipset", "name", name, "ips", ips)
-	return pb.IpSet{
-		Name: name,
-		Ips:  ips,
-	}
-}
-
-func (r *Reconciler) generateIPTables(action pb.Rule_Action, direction pb.Rule_Direction, set string) pb.Rule {
-	return pb.Rule{
-		Action:    action,
-		Direction: direction,
-		Set:       set,
-	}
-}
-
-func (r *Reconciler) cleanFinalizersAndRecover(ctx context.Context, networkchaos *v1alpha1.NetworkChaos) error {
-	if len(networkchaos.Finalizers) == 0 {
-		return nil
-	}
-	for _, key := range networkchaos.Finalizers {
-		direction := key[0:6]
-
-		podKey := key[6:]
-		ns, name, err := cache.SplitMetaNamespaceKey(podKey)
+	for _, key := range chaos.Finalizers {
+		ns, name, err := cache.SplitMetaNamespaceKey(key)
 		if err != nil {
-			return err
-		}
-
-		var pod v1.Pod
-		err = r.Get(ctx, types.NamespacedName{
-			Namespace: ns,
-			Name:      name,
-		}, &pod)
-
-		if err != nil {
-			if !k8sError.IsNotFound(err) {
-				return err
-			}
-
-			r.Log.Info("Pod not found", "namespace", ns, "name", name)
-			networkchaos.Finalizers = utils.RemoveFromFinalizer(networkchaos.Finalizers, key)
+			result = multierror.Append(result, err)
 			continue
 		}
 
-		var rule pb.Rule
+		_ = m.WithInit(types.NamespacedName{
+			Namespace: ns,
+			Name:      name,
+		})
+	}
+	responses := m.Commit(ctx)
+	for _, response := range responses {
+		key := response.Key
+		err := response.Err
+		// if pod not found or not running, directly return and giveup recover.
+		if err != nil {
+			if err != podnetworkchaosmanager.ErrPodNotFound && err != podnetworkchaosmanager.ErrPodNotRunning {
+				e.Log.Error(err, "fail to commit", "key", key)
 
-		if networkchaos.Spec.Direction != v1alpha1.From {
-			switch direction {
-			case "output":
-				set := r.generateSetName(networkchaos, targetIpSetPostFix)
-				rule = r.generateIPTables(pb.Rule_DELETE, pb.Rule_OUTPUT, set)
-			case "input-":
-				set := r.generateSetName(networkchaos, sourceIpSetPostFix)
-				rule = r.generateIPTables(pb.Rule_DELETE, pb.Rule_INPUT, set)
+				result = multierror.Append(result, err)
+				continue
 			}
 
-			err = r.sendIPTables(ctx, &pod, rule, networkchaos)
-			if err != nil {
-				r.Log.Error(err, "error while deleting iptables rules")
-				return err
-			}
+			e.Log.Info("pod is not found or not running", "key", key)
 		}
 
-		if networkchaos.Spec.Direction != v1alpha1.To {
-			switch direction {
-			case "output":
-				set := r.generateSetName(networkchaos, sourceIpSetPostFix)
-				rule = r.generateIPTables(pb.Rule_DELETE, pb.Rule_OUTPUT, set)
-			case "input-":
-				set := r.generateSetName(networkchaos, targetIpSetPostFix)
-				rule = r.generateIPTables(pb.Rule_DELETE, pb.Rule_INPUT, set)
-			}
+		chaos.Finalizers = finalizer.RemoveFromFinalizer(chaos.Finalizers, response.Key.String())
+	}
+	e.Log.Info("After recovering", "finalizers", chaos.Finalizers)
 
-			err = r.sendIPTables(ctx, &pod, rule, networkchaos)
-			if err != nil {
-				r.Log.Error(err, "error while deleting iptables rules")
-				return err
-			}
+	if chaos.Annotations[common.AnnotationCleanFinalizer] == common.AnnotationCleanFinalizerForced {
+		e.Log.Info("Force cleanup all finalizers", "chaos", chaos)
+		chaos.Finalizers = make([]string, 0)
+		return nil
+	}
+
+	return result
+}
+
+func init() {
+	router.Register("networkchaos", &v1alpha1.NetworkChaos{}, func(obj runtime.Object) bool {
+		chaos, ok := obj.(*v1alpha1.NetworkChaos)
+		if !ok {
+			return false
 		}
 
-		networkchaos.Finalizers = utils.RemoveFromFinalizer(networkchaos.Finalizers, key)
-	}
-	r.Log.Info("After recovering", "finalizers", networkchaos.Finalizers)
-
-	return nil
-}
-
-func (r *Reconciler) flushPodIPSet(ctx context.Context, pod *v1.Pod, ipset pb.IpSet, networkchaos *v1alpha1.NetworkChaos) error {
-	pbClient, err := utils.NewChaosDaemonClient(ctx, r.Client, pod, os.Getenv("CHAOS_DAEMON_PORT"))
-	if err != nil {
-		return err
-	}
-	defer pbClient.Close()
-
-	if len(pod.Status.ContainerStatuses) == 0 {
-		return fmt.Errorf("%s %s can't get the state of container", pod.Namespace, pod.Name)
-	}
-
-	containerID := pod.Status.ContainerStatuses[0].ContainerID
-
-	_, err = pbClient.FlushIpSet(ctx, &pb.IpSetRequest{
-		Ipset:       &ipset,
-		ContainerId: containerID,
+		return chaos.Spec.Action == v1alpha1.PartitionAction
+	}, func(ctx ctx.Context) end.Endpoint {
+		return &endpoint{
+			Context: ctx,
+		}
 	})
-	return err
-}
-
-func (r *Reconciler) sendIPTables(ctx context.Context, pod *v1.Pod, rule pb.Rule, networkchaos *v1alpha1.NetworkChaos) error {
-	pbClient, err := utils.NewChaosDaemonClient(ctx, r.Client, pod, os.Getenv("CHAOS_DAEMON_PORT"))
-	if err != nil {
-		return err
-	}
-	defer pbClient.Close()
-
-	if len(pod.Status.ContainerStatuses) == 0 {
-		return fmt.Errorf("%s %s can't get the state of container", pod.Namespace, pod.Name)
-	}
-
-	containerID := pod.Status.ContainerStatuses[0].ContainerID
-
-	_, err = pbClient.FlushIptables(ctx, &pb.IpTablesRequest{
-		Rule:        &rule,
-		ContainerId: containerID,
-	})
-	return err
 }

@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@
 package tools
 
 import (
-	_ "sigs.k8s.io/controller-tools/cmd/controller-gen"
 	_ "github.com/mgechev/revive"
 	_ "github.com/pingcap/failpoint/failpoint-ctl"
+	_ "github.com/swaggo/swag/cmd/swag"
 	_ "golang.org/x/tools/cmd/goimports"
+	_ "sigs.k8s.io/controller-tools/cmd/controller-gen"
 )

@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,115 +17,83 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
-	k8serror "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/go-logr/logr"
 	"golang.org/x/sync/errgroup"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	kubeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/pingcap/chaos-mesh/api/v1alpha1"
-	"github.com/pingcap/chaos-mesh/controllers/common"
-	"github.com/pingcap/chaos-mesh/controllers/reconciler"
-	"github.com/pingcap/chaos-mesh/controllers/twophase"
-	"github.com/pingcap/chaos-mesh/pkg/utils"
+	"github.com/chaos-mesh/chaos-mesh/api/v1alpha1"
+	"github.com/chaos-mesh/chaos-mesh/controllers/config"
+	"github.com/chaos-mesh/chaos-mesh/controllers/recover"
+	"github.com/chaos-mesh/chaos-mesh/pkg/events"
+	"github.com/chaos-mesh/chaos-mesh/pkg/finalizer"
+	"github.com/chaos-mesh/chaos-mesh/pkg/grpc"
+	"github.com/chaos-mesh/chaos-mesh/pkg/router"
+	ctx "github.com/chaos-mesh/chaos-mesh/pkg/router/context"
+	end "github.com/chaos-mesh/chaos-mesh/pkg/router/endpoint"
+	"github.com/chaos-mesh/chaos-mesh/pkg/selector"
 
-	pb "github.com/pingcap/chaos-mesh/pkg/chaosdaemon/pb"
-	pb_ "github.com/pingcap/chaos-mesh/pkg/chaoskernel/pb"
+	"github.com/chaos-mesh/chaos-mesh/pkg/chaosdaemon/client"
+	pb "github.com/chaos-mesh/chaos-mesh/pkg/chaosdaemon/pb"
+	pb_ "github.com/chaos-mesh/chaos-mesh/pkg/chaoskernel/pb"
 )
 
 const kernelChaosMsg = "kernel is injected with %v"
 
-// Reconciler is KernelChaos reconciler
-type Reconciler struct {
-	client.Client
+// endpoint is KernelChaos reconciler
+type endpoint struct {
+	ctx.Context
+}
+
+type recoverer struct {
+	kubeclient.Client
 	Log logr.Logger
 }
 
-// Reconcile reconciles a request from controller
-func (r *Reconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	r.Log.Info("reconciling kernelchaos")
-	ctx := context.Background()
-
-	var kernelchaos v1alpha1.KernelChaos
-	if err := r.Get(ctx, req.NamespacedName, &kernelchaos); err != nil {
-		r.Log.Error(err, "unable to get kernelchaos")
-		return ctrl.Result{}, nil
-	}
-
-	scheduler := kernelchaos.GetScheduler()
-	duration, err := kernelchaos.GetDuration()
-	if err != nil {
-		r.Log.Error(err, fmt.Sprintf("unable to get kernelchaos[%s/%s]'s duration", kernelchaos.Namespace, kernelchaos.Name))
-		return ctrl.Result{}, nil
-	}
-	if scheduler == nil && duration == nil {
-		return r.commonKernelChaos(&kernelchaos, req)
-	} else if scheduler != nil && duration != nil {
-		return r.scheduleKernelChaos(&kernelchaos, req)
-	}
-
-	// This should be ensured by admission webhook in the future
-	r.Log.Error(fmt.Errorf("kernelchaos[%s/%s] spec invalid", kernelchaos.Namespace, kernelchaos.Name), "scheduler and duration should be omitted or defined at the same time")
-	return ctrl.Result{}, nil
-}
-
-func (r *Reconciler) commonKernelChaos(kernelchaos *v1alpha1.KernelChaos, req ctrl.Request) (ctrl.Result, error) {
-	cr := common.NewReconciler(r, r.Client, r.Log)
-	return cr.Reconcile(req)
-}
-
-func (r *Reconciler) scheduleKernelChaos(kernelchaos *v1alpha1.KernelChaos, req ctrl.Request) (ctrl.Result, error) {
-	sr := twophase.NewReconciler(r, r.Client, r.Log)
-	return sr.Reconcile(req)
-}
-
 // Apply applies KernelChaos
-func (r *Reconciler) Apply(ctx context.Context, req ctrl.Request, chaos reconciler.InnerObject) error {
-	kernelchaos, ok := chaos.(*v1alpha1.KernelChaos)
+func (r *endpoint) Apply(ctx context.Context, req ctrl.Request, chaos v1alpha1.InnerObject) error {
+	kernelChaos, ok := chaos.(*v1alpha1.KernelChaos)
 	if !ok {
-		err := errors.New("chaos is not kernelchaos")
+		err := errors.New("chaos is not kernelChaos")
 		r.Log.Error(err, "chaos is not KernelChaos", "chaos", chaos)
 		return err
 	}
 
-	pods, err := utils.SelectAndFilterPods(ctx, r.Client, &kernelchaos.Spec)
-
+	pods, err := selector.SelectAndFilterPods(ctx, r.Client, r.Reader, &kernelChaos.Spec, config.ControllerCfg.ClusterScoped, config.ControllerCfg.TargetNamespace, config.ControllerCfg.AllowedNamespaces, config.ControllerCfg.IgnoredNamespaces)
 	if err != nil {
 		r.Log.Error(err, "failed to select and filter pods")
 		return err
 	}
 
-	err = r.applyAllPods(ctx, pods, kernelchaos)
-	if err != nil {
+	if err = r.applyAllPods(ctx, pods, kernelChaos); err != nil {
 		r.Log.Error(err, "failed to apply chaos on all pods")
 		return err
 	}
 
-	kernelchaos.Status.Experiment.Pods = []v1alpha1.PodStatus{}
-
+	kernelChaos.Status.Experiment.PodRecords = make([]v1alpha1.PodStatus, 0, len(pods))
 	for _, pod := range pods {
 		ps := v1alpha1.PodStatus{
 			Namespace: pod.Namespace,
 			Name:      pod.Name,
 			HostIP:    pod.Status.HostIP,
 			PodIP:     pod.Status.PodIP,
-			Message:   fmt.Sprintf(kernelChaosMsg, kernelchaos.Spec.FailKernRequest),
+			Message:   fmt.Sprintf(kernelChaosMsg, kernelChaos.Spec.FailKernRequest),
 		}
 
-		kernelchaos.Status.Experiment.Pods = append(kernelchaos.Status.Experiment.Pods, ps)
+		kernelChaos.Status.Experiment.PodRecords = append(kernelChaos.Status.Experiment.PodRecords, ps)
 	}
+	r.Event(kernelChaos, v1.EventTypeNormal, events.ChaosInjected, "")
 
 	return nil
 }
 
 // Recover means the reconciler recovers the chaos action
-func (r *Reconciler) Recover(ctx context.Context, req ctrl.Request, chaos reconciler.InnerObject) error {
+func (r *endpoint) Recover(ctx context.Context, req ctrl.Request, chaos v1alpha1.InnerObject) error {
 	kernelchaos, ok := chaos.(*v1alpha1.KernelChaos)
 	if !ok {
 		err := errors.New("chaos is not KernelChaos")
@@ -133,87 +101,51 @@ func (r *Reconciler) Recover(ctx context.Context, req ctrl.Request, chaos reconc
 		return err
 	}
 
-	err := r.cleanFinalizersAndRecover(ctx, kernelchaos)
+	rd := recover.Delegate{Client: r.Client, Log: r.Log, RecoverIntf: &recoverer{r.Client, r.Log}}
+
+	finalizers, err := rd.CleanFinalizersAndRecover(ctx, chaos, kernelchaos.Finalizers, kernelchaos.Annotations)
 	if err != nil {
 		return err
 	}
+	kernelchaos.Finalizers = finalizers
+	r.Event(kernelchaos, v1.EventTypeNormal, events.ChaosRecovered, "")
 
 	return nil
 }
 
-func (r *Reconciler) cleanFinalizersAndRecover(ctx context.Context, chaos *v1alpha1.KernelChaos) error {
-	if len(chaos.Finalizers) == 0 {
-		return nil
-	}
-
-	for _, key := range chaos.Finalizers {
-		ns, name, err := cache.SplitMetaNamespaceKey(key)
-		if err != nil {
-			return err
-		}
-
-		var pod v1.Pod
-		err = r.Get(ctx, types.NamespacedName{
-			Namespace: ns,
-			Name:      name,
-		}, &pod)
-
-		if err != nil {
-			if !k8serror.IsNotFound(err) {
-				return err
-			}
-
-			r.Log.Info("Pod not found", "namespace", ns, "name", name)
-			chaos.Finalizers = utils.RemoveFromFinalizer(chaos.Finalizers, key)
-			continue
-		}
-
-		err = r.recoverPod(ctx, &pod, chaos)
-		if err != nil {
-			return err
-		}
-
-		chaos.Finalizers = utils.RemoveFromFinalizer(chaos.Finalizers, key)
-	}
-
-	return nil
-}
-
-func (r *Reconciler) recoverPod(ctx context.Context, pod *v1.Pod, chaos *v1alpha1.KernelChaos) error {
+func (r *recoverer) RecoverPod(ctx context.Context, pod *v1.Pod, somechaos v1alpha1.InnerObject) error {
+	// judged type in `Recover` already so no need to judge again
+	chaos, _ := somechaos.(*v1alpha1.KernelChaos)
 	r.Log.Info("try to recover pod", "namespace", pod.Namespace, "name", pod.Name)
 
-	c1, err := utils.CreateGrpcConnection(ctx, r.Client, pod, os.Getenv("CHAOS_DAEMON_PORT"))
+	pbClient, err := client.NewChaosDaemonClient(ctx, r.Client, pod, config.ControllerCfg.ChaosDaemonPort)
 	if err != nil {
 		return err
 	}
-	defer c1.Close()
-
-	pbClient := pb.NewChaosDaemonClient(c1)
+	defer pbClient.Close()
 
 	if len(pod.Status.ContainerStatuses) == 0 {
 		return fmt.Errorf("%s %s can't get the state of container", pod.Namespace, pod.Name)
 	}
 
-	containerID := pod.Status.ContainerStatuses[0].ContainerID
-
 	containerResponse, err := pbClient.ContainerGetPid(ctx, &pb.ContainerRequest{
 		Action: &pb.ContainerAction{
 			Action: pb.ContainerAction_GETPID,
 		},
-		ContainerId: containerID,
+		ContainerId: pod.Status.ContainerStatuses[0].ContainerID,
 	})
 
 	if err != nil {
 		r.Log.Error(err, "Get container pid error", "namespace", pod.Namespace, "name", pod.Name)
-	} else {
-		r.Log.Info("Get container pid", "namespace", pod.Namespace, "name", pod.Name)
+		return err
 	}
 
-	c2, err := utils.CreateGrpcConnection(ctx, r.Client, pod, os.Getenv("BPFKI_PORT"))
+	r.Log.Info("Get container pid", "namespace", pod.Namespace, "name", pod.Name)
+	conn, err := grpc.CreateGrpcConnection(ctx, r.Client, pod, config.ControllerCfg.BPFKIPort)
 	if err != nil {
 		return err
 	}
-	defer c2.Close()
+	defer conn.Close()
 
 	var callchain []*pb_.FailKernRequestFrame
 	for _, frame := range chaos.Spec.FailKernRequest.Callchain {
@@ -224,8 +156,8 @@ func (r *Reconciler) recoverPod(ctx context.Context, pod *v1.Pod, chaos *v1alpha
 		})
 	}
 
-	pbClient2 := pb_.NewBPFKIServiceClient(c2)
-	_, err = pbClient2.RecoverMMOrBIO(ctx, &pb_.FailKernRequest{
+	bpfClient := pb_.NewBPFKIServiceClient(conn)
+	_, err = bpfClient.RecoverMMOrBIO(ctx, &pb_.FailKernRequest{
 		Pid:       containerResponse.Pid,
 		Callchain: callchain,
 	})
@@ -234,11 +166,11 @@ func (r *Reconciler) recoverPod(ctx context.Context, pod *v1.Pod, chaos *v1alpha
 }
 
 // Object would return the instance of chaos
-func (r *Reconciler) Object() reconciler.InnerObject {
+func (r *endpoint) Object() v1alpha1.InnerObject {
 	return &v1alpha1.KernelChaos{}
 }
 
-func (r *Reconciler) applyAllPods(ctx context.Context, pods []v1.Pod, chaos *v1alpha1.KernelChaos) error {
+func (r *endpoint) applyAllPods(ctx context.Context, pods []v1.Pod, chaos *v1alpha1.KernelChaos) error {
 	g := errgroup.Group{}
 	for index := range pods {
 		pod := &pods[index]
@@ -247,7 +179,7 @@ func (r *Reconciler) applyAllPods(ctx context.Context, pods []v1.Pod, chaos *v1a
 		if err != nil {
 			return err
 		}
-		chaos.Finalizers = utils.InsertFinalizer(chaos.Finalizers, key)
+		chaos.Finalizers = finalizer.InsertFinalizer(chaos.Finalizers, key)
 
 		g.Go(func() error {
 			return r.applyPod(ctx, pod, chaos)
@@ -257,41 +189,36 @@ func (r *Reconciler) applyAllPods(ctx context.Context, pods []v1.Pod, chaos *v1a
 	return g.Wait()
 }
 
-func (r *Reconciler) applyPod(ctx context.Context, pod *v1.Pod, chaos *v1alpha1.KernelChaos) error {
+func (r *endpoint) applyPod(ctx context.Context, pod *v1.Pod, chaos *v1alpha1.KernelChaos) error {
 	r.Log.Info("Try to inject kernel on pod", "namespace", pod.Namespace, "name", pod.Name)
 
-	c1, err := utils.CreateGrpcConnection(ctx, r.Client, pod, os.Getenv("CHAOS_DAEMON_PORT"))
+	pbClient, err := client.NewChaosDaemonClient(ctx, r.Client, pod, config.ControllerCfg.ChaosDaemonPort)
 	if err != nil {
 		return err
 	}
-	defer c1.Close()
-
-	pbClient := pb.NewChaosDaemonClient(c1)
+	defer pbClient.Close()
 
 	if len(pod.Status.ContainerStatuses) == 0 {
 		return fmt.Errorf("%s %s can't get the state of container", pod.Namespace, pod.Name)
 	}
 
-	containerID := pod.Status.ContainerStatuses[0].ContainerID
-
 	containerResponse, err := pbClient.ContainerGetPid(ctx, &pb.ContainerRequest{
 		Action: &pb.ContainerAction{
 			Action: pb.ContainerAction_GETPID,
 		},
-		ContainerId: containerID,
+		ContainerId: pod.Status.ContainerStatuses[0].ContainerID,
 	})
-
 	if err != nil {
 		r.Log.Error(err, "Get container pid error", "namespace", pod.Namespace, "name", pod.Name)
-	} else {
-		r.Log.Info("Get container pid", "namespace", pod.Namespace, "name", pod.Name)
+		return err
 	}
 
-	c2, err := utils.CreateGrpcConnection(ctx, r.Client, pod, os.Getenv("BPFKI_PORT"))
+	r.Log.Info("Get container pid", "namespace", pod.Namespace, "name", pod.Name)
+	conn, err := grpc.CreateGrpcConnection(ctx, r.Client, pod, config.ControllerCfg.BPFKIPort)
 	if err != nil {
 		return err
 	}
-	defer c2.Close()
+	defer conn.Close()
 
 	var callchain []*pb_.FailKernRequestFrame
 	for _, frame := range chaos.Spec.FailKernRequest.Callchain {
@@ -302,8 +229,8 @@ func (r *Reconciler) applyPod(ctx context.Context, pod *v1.Pod, chaos *v1alpha1.
 		})
 	}
 
-	pbClient2 := pb_.NewBPFKIServiceClient(c2)
-	_, err = pbClient2.FailMMOrBIO(ctx, &pb_.FailKernRequest{
+	bpfClient := pb_.NewBPFKIServiceClient(conn)
+	_, err = bpfClient.FailMMOrBIO(ctx, &pb_.FailKernRequest{
 		Pid:         containerResponse.Pid,
 		Ftype:       pb_.FailKernRequest_FAILTYPE(chaos.Spec.FailKernRequest.FailType),
 		Headers:     chaos.Spec.FailKernRequest.Headers,
@@ -313,4 +240,14 @@ func (r *Reconciler) applyPod(ctx context.Context, pod *v1.Pod, chaos *v1alpha1.
 	})
 
 	return err
+}
+
+func init() {
+	router.Register("kernelchaos", &v1alpha1.KernelChaos{}, func(obj runtime.Object) bool {
+		return true
+	}, func(ctx ctx.Context) end.Endpoint {
+		return &endpoint{
+			Context: ctx,
+		}
+	})
 }

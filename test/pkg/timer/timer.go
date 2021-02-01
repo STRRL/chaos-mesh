@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -74,6 +74,11 @@ func StartTimer() (*Timer, error) {
 			t := time.Unix(sec, nsec)
 			output <- TimeResult{
 				Time: &t,
+			}
+		}
+		if err := stdoutScanner.Err(); err != nil {
+			output <- TimeResult{
+				Error: err,
 			}
 		}
 	}()

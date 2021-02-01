@@ -1,17 +1,18 @@
-apiVersion: pingcap.com/v1alpha1
+apiVersion: chaos-mesh.org/v1alpha1
 kind: IoChaos
 metadata:
   name: io-delay-example
 spec:
-  action: delay
+  action: latency
   mode: one
-  duration: "400s"
-  configName: "chaosfs-etcd"
-  path: ""
+  path: "/var/run/etcd/**/*"
   selector:
     labelSelectors:
       app: etcd
-  layer: "fs"
+  volumePath: /var/run/etcd
   delay: "100ms"
+  percent: 50
+  duration: "400s"
   scheduler:
     cron: "@every 10m"
+

@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,12 +14,11 @@
 package v1alpha1
 
 import (
-	"time"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // +kubebuilder:object:root=true
+// +chaos-mesh:base
 
 // KernelChaos is the Schema for the kernelchaos API
 type KernelChaos struct {
@@ -38,12 +37,13 @@ type KernelChaos struct {
 type KernelChaosSpec struct {
 	// Mode defines the mode to run chaos action.
 	// Supported mode: one / all / fixed / fixed-percent / random-max-percent
+	// +kubebuilder:validation:Enum=one;all;fixed;fixed-percent;random-max-percent
 	Mode PodMode `json:"mode"`
 
 	// Value is required when the mode is set to `FixedPodMode` / `FixedPercentPodMod` / `RandomMaxPercentPodMod`.
 	// If `FixedPodMode`, provide an integer of pods to do chaos action.
-	// If `FixedPercentPodMod`, provide a number from 0-100 to specify the max % of pods the server can do chaos action.
-	// If `RandomMaxPercentPodMod`,  provide a number from 0-100 to specify the % of pods to do chaos action
+	// If `FixedPercentPodMod`, provide a number from 0-100 to specify the percent of pods the server can do chaos action.
+	// If `RandomMaxPercentPodMod`,  provide a number from 0-100 to specify the max percent of pods to do chaos action
 	// +optional
 	Value string `json:"value"`
 
@@ -58,14 +58,6 @@ type KernelChaosSpec struct {
 
 	// Scheduler defines some schedule rules to control the running time of the chaos experiment about time.
 	Scheduler *SchedulerSpec `json:"scheduler,omitempty"`
-
-	// Next time when this action will be applied again
-	// +optional
-	NextStart *metav1.Time `json:"nextStart,omitempty"`
-
-	// Next time when this action will be recovered
-	// +optional
-	NextRecover *metav1.Time `json:"nextRecover,omitempty"`
 }
 
 // GetSelector is a getter for Selector (for implementing SelectSpec)
@@ -93,6 +85,8 @@ type FailKernRequest struct {
 	//   1. https://www.kernel.org/doc/html/latest/fault-injection/fault-injection.html
 	//   2. http://github.com/iovisor/bcc/blob/master/tools/inject_example.txt
 	// to learn more
+	// +kubebuilder:validation:Maximum=2
+	// +kubebuilder:validation:Minimum=0
 	FailType int32 `json:"failtype"`
 
 	// Headers indicates the appropriate kernel headers you need.
@@ -114,9 +108,12 @@ type FailKernRequest struct {
 
 	// Probability indicates the fails with probability.
 	// If you want 1%, please set this field with 1.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
 	Probability uint32 `json:"probability,omitempty"`
 
 	// Times indicates the max times of fails.
+	// +kubebuilder:validation:Minimum=0
 	Times uint32 `json:"times,omitempty"`
 }
 
@@ -140,86 +137,4 @@ type Frame struct {
 // KernelChaosStatus defines the observed state of KernelChaos
 type KernelChaosStatus struct {
 	ChaosStatus `json:",inline"`
-}
-
-// GetDuration gets the duration of KernelChaos
-func (in *KernelChaos) GetDuration() (*time.Duration, error) {
-	if in.Spec.Duration == nil {
-		return nil, nil
-	}
-	duration, err := time.ParseDuration(*in.Spec.Duration)
-	if err != nil {
-		return nil, err
-	}
-	return &duration, nil
-}
-
-// GetNextStart gets NextStart field of KernelChaos
-func (in *KernelChaos) GetNextStart() time.Time {
-	if in.Spec.NextStart == nil {
-		return time.Time{}
-	}
-	return in.Spec.NextStart.Time
-}
-
-// SetNextStart sets NextStart field of KernelChaos
-func (in *KernelChaos) SetNextStart(t time.Time) {
-	if t.IsZero() {
-		in.Spec.NextStart = nil
-		return
-	}
-
-	if in.Spec.NextStart == nil {
-		in.Spec.NextStart = &metav1.Time{}
-	}
-	in.Spec.NextStart.Time = t
-}
-
-// GetNextRecover gets NextRecover field of KernelChaos
-func (in *KernelChaos) GetNextRecover() time.Time {
-	if in.Spec.NextRecover == nil {
-		return time.Time{}
-	}
-	return in.Spec.NextRecover.Time
-}
-
-// SetNextRecover sets NextRecover field of KernelChaos
-func (in *KernelChaos) SetNextRecover(t time.Time) {
-	if t.IsZero() {
-		in.Spec.NextRecover = nil
-		return
-	}
-
-	if in.Spec.NextRecover == nil {
-		in.Spec.NextRecover = &metav1.Time{}
-	}
-	in.Spec.NextRecover.Time = t
-}
-
-// GetScheduler returns the scheduler of KernelChaos
-func (in *KernelChaos) GetScheduler() *SchedulerSpec {
-	return in.Spec.Scheduler
-}
-
-// GetStatus returns the status of KernelChaos
-func (in *KernelChaos) GetStatus() *ChaosStatus {
-	return &in.Status.ChaosStatus
-}
-
-// IsDeleted returns whether this resource has been deleted
-func (in *KernelChaos) IsDeleted() bool {
-	return !in.DeletionTimestamp.IsZero()
-}
-
-// +kubebuilder:object:root=true
-
-// KernelChaosList contains a list of KernelChaos
-type KernelChaosList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []KernelChaos `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&KernelChaos{}, &KernelChaosList{})
 }

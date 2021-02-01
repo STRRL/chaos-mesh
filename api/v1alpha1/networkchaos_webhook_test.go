@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,15 +27,16 @@ var _ = Describe("networkchaos_webhook", func() {
 			}
 			networkchaos.Default()
 			Expect(networkchaos.Spec.Selector.Namespaces[0]).To(Equal(metav1.NamespaceDefault))
-			Expect(networkchaos.Spec.Target.TargetSelector.Namespaces[0]).To(Equal(metav1.NamespaceDefault))
 		})
 
 		It("set default DelaySpec", func() {
 			networkchaos := &NetworkChaos{
 				ObjectMeta: metav1.ObjectMeta{Namespace: metav1.NamespaceDefault},
 				Spec: NetworkChaosSpec{
-					Delay: &DelaySpec{
-						Latency: "90ms",
+					TcParameter: TcParameter{
+						Delay: &DelaySpec{
+							Latency: "90ms",
+						},
 					},
 				},
 			}
@@ -128,6 +129,170 @@ var _ = Describe("networkchaos_webhook", func() {
 					},
 					expect: "error",
 				},
+				{
+					name: "validate the delay",
+					chaos: NetworkChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo6",
+						},
+						Spec: NetworkChaosSpec{
+							TcParameter: TcParameter{
+								Delay: &DelaySpec{
+									Latency:     "1S",
+									Jitter:      "1S",
+									Correlation: "num",
+								},
+							},
+						},
+					},
+					execute: func(chaos *NetworkChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate the reorder",
+					chaos: NetworkChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo7",
+						},
+						Spec: NetworkChaosSpec{
+							TcParameter: TcParameter{
+								Delay: &DelaySpec{
+									Reorder: &ReorderSpec{
+										Reorder:     "num",
+										Correlation: "num",
+									},
+								},
+							},
+						},
+					},
+					execute: func(chaos *NetworkChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate the loss",
+					chaos: NetworkChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo8",
+						},
+						Spec: NetworkChaosSpec{
+							TcParameter: TcParameter{
+								Loss: &LossSpec{
+									Loss:        "num",
+									Correlation: "num",
+								},
+							},
+						},
+					},
+					execute: func(chaos *NetworkChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate the duplicate",
+					chaos: NetworkChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo9",
+						},
+						Spec: NetworkChaosSpec{
+							TcParameter: TcParameter{
+								Duplicate: &DuplicateSpec{
+									Duplicate:   "num",
+									Correlation: "num",
+								},
+							},
+						},
+					},
+					execute: func(chaos *NetworkChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate the corrupt",
+					chaos: NetworkChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo10",
+						},
+						Spec: NetworkChaosSpec{
+							TcParameter: TcParameter{
+								Corrupt: &CorruptSpec{
+									Corrupt:     "num",
+									Correlation: "num",
+								},
+							},
+						},
+					},
+					execute: func(chaos *NetworkChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate the bandwidth",
+					chaos: NetworkChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo11",
+						},
+						Spec: NetworkChaosSpec{
+							TcParameter: TcParameter{
+								Bandwidth: &BandwidthSpec{
+									Rate: "10",
+								},
+							},
+						},
+					},
+					execute: func(chaos *NetworkChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate the target",
+					chaos: NetworkChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo12",
+						},
+						Spec: NetworkChaosSpec{
+							Target: &Target{
+								TargetMode:  FixedPodMode,
+								TargetValue: "0",
+							},
+						},
+					},
+					execute: func(chaos *NetworkChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate direction and externalTargets",
+					chaos: NetworkChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo12",
+						},
+						Spec: NetworkChaosSpec{
+							Direction:       From,
+							ExternalTargets: []string{"8.8.8.8"},
+						},
+					},
+					execute: func(chaos *NetworkChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
 			}
 
 			for _, tc := range tcs {
@@ -138,6 +303,19 @@ var _ = Describe("networkchaos_webhook", func() {
 					Expect(err).NotTo(HaveOccurred())
 				}
 			}
+		})
+	})
+	Context("convertUnitToBytes", func() {
+		It("should convert number with unit successfully", func() {
+			n, err := ConvertUnitToBytes("  10   mbPs  ")
+			Expect(err).Should(Succeed())
+			Expect(n).To(Equal(uint64(10 * 1024 * 1024)))
+		})
+
+		It("should return error with invalid unit", func() {
+			n, err := ConvertUnitToBytes(" 10 cpbs")
+			Expect(err).Should(HaveOccurred())
+			Expect(n).To(Equal(uint64(0)))
 		})
 	})
 })

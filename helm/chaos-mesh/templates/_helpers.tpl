@@ -39,6 +39,20 @@ Define the svc's name
 {{- end -}}
 
 {{/*
+Define the chaos-daemon svc's name
+*/}}
+{{- define "chaos-daemon.svc" -}}
+{{- printf "chaos-daemon" -}}
+{{- end -}}
+
+{{/*
+Define the chaos-dashboard svc's name
+*/}}
+{{- define "chaos-dashboard.svc" -}}
+{{- printf "chaos-dashboard" -}}
+{{- end -}}
+
+{{/*
 Define the secret's name of certs
 */}}
 {{- define "chaos-mesh.certs" -}}
@@ -49,7 +63,7 @@ Define the secret's name of certs
 Define the MutatingWebhookConfiguration's name
 */}}
 {{- define "chaos-mesh.mutation" -}}
-{{- printf "chaos-mesh-sidecar-injector" -}}
+{{- printf "chaos-mesh-mutation" -}}
 {{- end -}}
 
 {{/*
@@ -63,5 +77,5 @@ Define the ValidationWebhookConfiguration's name
 Define the webhook's name
 */}}
 {{- define "chaos-mesh.webhook" -}}
-{{- printf "admission-webhook.pingcap.com" -}}
+{{- printf "admission-webhook.chaos-mesh.org" -}}
 {{- end -}}

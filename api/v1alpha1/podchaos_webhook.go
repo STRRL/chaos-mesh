@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,22 +18,14 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	ctrl "sigs.k8s.io/controller-runtime"
-	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 // log is for logging in this package.
 var podchaoslog = logf.Log.WithName("podchaos-resource")
 
-// SetupWebhookWithManager setup PodChaos's webhook with manager
-func (in *PodChaos) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(in).
-		Complete()
-}
-
-// +kubebuilder:webhook:path=/mutate-pingcap-com-v1alpha1-podchaos,mutating=true,failurePolicy=fail,groups=pingcap.com,resources=podchaos,verbs=create;update,versions=v1alpha1,name=mpodchaos.kb.io
+// +kubebuilder:webhook:path=/mutate-chaos-mesh-org-v1alpha1-podchaos,mutating=true,failurePolicy=fail,groups=chaos-mesh.org,resources=podchaos,verbs=create;update,versions=v1alpha1,name=mpodchaos.kb.io
 
 var _ webhook.Defaulter = &PodChaos{}
 
@@ -44,7 +36,7 @@ func (in *PodChaos) Default() {
 	in.Spec.Selector.DefaultNamespace(in.GetNamespace())
 }
 
-// +kubebuilder:webhook:verbs=create;update,path=/validate-pingcap-com-v1alpha1-podchaos,mutating=false,failurePolicy=fail,groups=pingcap.com,resources=podchaos,versions=v1alpha1,name=vpodchaos.kb.io
+// +kubebuilder:webhook:verbs=create;update,path=/validate-chaos-mesh-org-v1alpha1-podchaos,mutating=false,failurePolicy=fail,groups=chaos-mesh.org,resources=podchaos,versions=v1alpha1,name=vpodchaos.kb.io
 
 var _ ChaosValidator = &PodChaos{}
 
@@ -71,47 +63,63 @@ func (in *PodChaos) ValidateDelete() error {
 // Validate validates chaos object
 func (in *PodChaos) Validate() error {
 	specField := field.NewPath("spec")
-	errLst := in.ValidateScheduler(specField)
+	allErrs := in.ValidateScheduler(specField)
+	allErrs = append(allErrs, in.ValidatePodMode(specField)...)
+	allErrs = append(allErrs, in.Spec.validateContainerName(specField.Child("containerName"))...)
 
-	if len(errLst) > 0 {
-		return fmt.Errorf(errLst.ToAggregate().Error())
+	if len(allErrs) > 0 {
+		return fmt.Errorf(allErrs.ToAggregate().Error())
 	}
 	return nil
 }
 
 // ValidateScheduler validates the scheduler and duration
-func (in *PodChaos) ValidateScheduler(root *field.Path) field.ErrorList {
+func (in *PodChaos) ValidateScheduler(spec *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
-	schedulerField := root.Child("scheduler")
+	schedulerField := spec.Child("scheduler")
 
 	switch in.Spec.Action {
 	case PodFailureAction:
-		if in.Spec.Duration != nil && in.Spec.Scheduler != nil {
-			return nil
-		} else if in.Spec.Duration == nil && in.Spec.Scheduler == nil {
-			return nil
-		}
-		allErrs = append(allErrs, field.Invalid(schedulerField, in.Spec.Scheduler, ValidateSchedulerError))
-		break
+		allErrs = append(allErrs, ValidateScheduler(in, spec)...)
 	case PodKillAction:
 		// We choose to ignore the Duration property even user define it
 		if in.Spec.Scheduler == nil {
 			allErrs = append(allErrs, field.Invalid(schedulerField, in.Spec.Scheduler, ValidatePodchaosSchedulerError))
+		} else {
+			_, err := ParseCron(in.Spec.Scheduler.Cron, schedulerField.Child("cron"))
+			allErrs = append(allErrs, err...)
 		}
-		break
 	case ContainerKillAction:
 		// We choose to ignore the Duration property even user define it
 		if in.Spec.Scheduler == nil {
 			allErrs = append(allErrs, field.Invalid(schedulerField, in.Spec.Scheduler, ValidatePodchaosSchedulerError))
+		} else {
+			_, err := ParseCron(in.Spec.Scheduler.Cron, schedulerField.Child("cron"))
+			allErrs = append(allErrs, err...)
 		}
-		break
 	default:
 		err := fmt.Errorf("podchaos[%s/%s] have unknown action type", in.Namespace, in.Name)
 		log.Error(err, "Wrong PodChaos Action type")
 
-		actionField := root.Child("action")
+		actionField := spec.Child("action")
 		allErrs = append(allErrs, field.Invalid(actionField, in.Spec.Action, err.Error()))
-		break
+	}
+	return allErrs
+}
+
+// ValidatePodMode validates the value with podmode
+func (in *PodChaos) ValidatePodMode(spec *field.Path) field.ErrorList {
+	return ValidatePodMode(in.Spec.Value, in.Spec.Mode, spec.Child("value"))
+}
+
+// validateContainerName validates the ContainerName
+func (in *PodChaosSpec) validateContainerName(containerField *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if in.Action == ContainerKillAction {
+		if in.ContainerName == "" {
+			err := fmt.Errorf("the name of container should not be empty on %s action", in.Action)
+			allErrs = append(allErrs, field.Invalid(containerField, in.ContainerName, err.Error()))
+		}
 	}
 	return allErrs
 }

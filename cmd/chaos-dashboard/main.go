@@ -1,4 +1,4 @@
-// Copyright 2019 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,115 +17,85 @@ import (
 	"flag"
 	"os"
 
-	chaosoperatorv1alpha1 "github.com/pingcap/chaos-mesh/api/v1alpha1"
-	"github.com/pingcap/chaos-mesh/pkg/collector"
-	"github.com/pingcap/chaos-mesh/pkg/server"
-	"github.com/pingcap/chaos-mesh/pkg/version"
+	"go.uber.org/fx"
 
-	"k8s.io/apimachinery/pkg/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	_ "github.com/jinzhu/gorm/dialects/mssql"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
+	_ "github.com/jinzhu/gorm/dialects/postgres"
+	_ "github.com/jinzhu/gorm/dialects/sqlite"
+
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-
-	_ "github.com/go-sql-driver/mysql"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	// +kubebuilder:scaffold:imports
+
+	"github.com/chaos-mesh/chaos-mesh/pkg/apiserver"
+	"github.com/chaos-mesh/chaos-mesh/pkg/collector"
+	"github.com/chaos-mesh/chaos-mesh/pkg/config"
+	"github.com/chaos-mesh/chaos-mesh/pkg/store"
+	"github.com/chaos-mesh/chaos-mesh/pkg/store/dbstore"
+	"github.com/chaos-mesh/chaos-mesh/pkg/ttlcontroller"
+	"github.com/chaos-mesh/chaos-mesh/pkg/version"
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	log = ctrl.Log.WithName("setup")
 )
 
 var (
-	metricsAddr          string
-	enableLeaderElection bool
-	printVersion         bool
+	printVersion bool
 )
 
-func init() {
-	_ = clientgoscheme.AddToScheme(scheme)
+// @title Chaos Mesh Dashboard API
+// @version 1.0
+// @description Swagger docs for Chaos Mesh Dashboard. If you encounter any problems with API, please click on the issues link below to report bugs or questions.
 
-	_ = chaosoperatorv1alpha1.AddToScheme(scheme)
-	// +kubebuilder:scaffold:scheme
-}
+// @contact.name Issues
+// @contact.url https://github.com/chaos-mesh/chaos-mesh/issues
 
-func parseFlags() {
-	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
-		"Enable leader election for chaos collector. Enabling this will ensure there is only one active chaos collector.")
-	flag.BoolVar(&printVersion, "version", false, "print version information and exit")
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 
-	flag.Parse()
-}
-
+// @BasePath /api
 func main() {
-	parseFlags()
+	flag.BoolVar(&printVersion, "version", false, "print version information and exit")
+	flag.Parse()
 
-	version.PrintVersionInfo("Chaos collector")
+	version.PrintVersionInfo("Chaos Dashboard")
 	if printVersion {
 		os.Exit(0)
 	}
 
-	ctrl.SetLogger(zap.Logger(true))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:             scheme,
-		MetricsBindAddress: metricsAddr,
-		LeaderElection:     enableLeaderElection,
-		Port:               9443,
-	})
+	dashboardConfig, err := config.EnvironChaosDashboard()
 	if err != nil {
-		setupLog.Error(err, "unable to start collector")
+		log.Error(err, "main: invalid ChaosDashboardConfig")
+		os.Exit(1)
+	}
+	dashboardConfig.Version = version.Get().GitVersion
+
+	persistTTLConfigParsed, err := config.ParsePersistTTLConfig(dashboardConfig.PersistTTL)
+	if err != nil {
+		log.Error(err, "main: invalid PersistTTLConfig")
 		os.Exit(1)
 	}
 
-	if err = (&collector.ChaosCollector{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("collector").WithName("PodChaos"),
-	}).Setup(mgr, &chaosoperatorv1alpha1.PodChaos{}); err != nil {
-		setupLog.Error(err, "unable to create collector", "collector", "PodChaos")
-		os.Exit(1)
-	}
+	controllerRuntimeStopCh := ctrl.SetupSignalHandler()
+	app := fx.New(
+		fx.Provide(
+			func() (<-chan struct{}, *config.ChaosDashboardConfig, *ttlcontroller.TTLconfig) {
+				return controllerRuntimeStopCh, dashboardConfig, persistTTLConfigParsed
+			},
+			dbstore.NewDBStore,
+			collector.NewServer,
+			ttlcontroller.NewController,
+		),
+		store.Module,
+		apiserver.Module,
+		fx.Invoke(collector.Register),
+		fx.Invoke(ttlcontroller.Register),
+	)
 
-	if err = (&collector.ChaosCollector{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("collector").WithName("NetworkChaos"),
-	}).Setup(mgr, &chaosoperatorv1alpha1.NetworkChaos{}); err != nil {
-		setupLog.Error(err, "unable to create collector", "collector", "NetworkChaos")
-		os.Exit(1)
-	}
-
-	if err = (&collector.ChaosCollector{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("collector").WithName("IoChaos"),
-	}).Setup(mgr, &chaosoperatorv1alpha1.IoChaos{}); err != nil {
-		setupLog.Error(err, "unable to create collector", "collector", "IoChaos")
-		os.Exit(1)
-	}
-
-	if err = (&collector.ChaosCollector{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("TimeChaos"),
-	}).Setup(mgr, &chaosoperatorv1alpha1.TimeChaos{}); err != nil {
-		setupLog.Error(err, "unable to create collector", "collector", "TimeChaos")
-		os.Exit(1)
-	}
-
-	stopCh := ctrl.SetupSignalHandler()
-
-	// +kubebuilder:scaffold:builder
-
-	go func() {
-		setupLog.Info("Starting server")
-		s := server.SetupServer(mgr.GetClient())
-		s.Run()
-	}()
-
-	setupLog.Info("Starting collector")
-	if err := mgr.Start(stopCh); err != nil {
-		setupLog.Error(err, "problem running collector")
-		os.Exit(1)
-	}
+	app.Run()
+	<-controllerRuntimeStopCh
 }

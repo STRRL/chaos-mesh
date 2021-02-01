@@ -1,4 +1,4 @@
-// Copyright 2019 PingCAP, Inc.
+// Copyright 2019 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,25 +14,11 @@
 package v1alpha1
 
 import (
-	"time"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// PodChaosAction represents the chaos action about pods.
-type PodChaosAction string
-
-const (
-	// PodKillAction represents the chaos action of killing pods.
-	PodKillAction PodChaosAction = "pod-kill"
-	// PodFailureAction represents the chaos action of injecting errors to pods.
-	// This action will cause the pod to not be created for a while.
-	PodFailureAction PodChaosAction = "pod-failure"
-	// ContainerKillAction represents the chaos action of killing the container
-	ContainerKillAction PodChaosAction = "container-kill"
-)
-
 // +kubebuilder:object:root=true
+// +chaos-mesh:base
 
 // PodChaos is the control script`s spec.
 type PodChaos struct {
@@ -47,68 +33,18 @@ type PodChaos struct {
 	Status PodChaosStatus `json:"status"`
 }
 
-func (in *PodChaos) GetStatus() *ChaosStatus {
-	return &in.Status.ChaosStatus
-}
+// PodChaosAction represents the chaos action about pods.
+type PodChaosAction string
 
-func (in *PodChaos) IsDeleted() bool {
-	return !in.DeletionTimestamp.IsZero()
-}
-
-// GetDuration would return the duration for chaos
-func (in *PodChaos) GetDuration() (*time.Duration, error) {
-	if in.Spec.Duration == nil {
-		return nil, nil
-	}
-	duration, err := time.ParseDuration(*in.Spec.Duration)
-	if err != nil {
-		return nil, err
-	}
-	return &duration, nil
-}
-
-func (in *PodChaos) GetNextStart() time.Time {
-	if in.Spec.NextStart == nil {
-		return time.Time{}
-	}
-	return in.Spec.NextStart.Time
-}
-
-func (in *PodChaos) SetNextStart(t time.Time) {
-	if t.IsZero() {
-		in.Spec.NextStart = nil
-		return
-	}
-
-	if in.Spec.NextStart == nil {
-		in.Spec.NextStart = &metav1.Time{}
-	}
-	in.Spec.NextStart.Time = t
-}
-
-func (in *PodChaos) GetNextRecover() time.Time {
-	if in.Spec.NextRecover == nil {
-		return time.Time{}
-	}
-	return in.Spec.NextRecover.Time
-}
-
-func (in *PodChaos) SetNextRecover(t time.Time) {
-	if t.IsZero() {
-		in.Spec.NextRecover = nil
-		return
-	}
-
-	if in.Spec.NextRecover == nil {
-		in.Spec.NextRecover = &metav1.Time{}
-	}
-	in.Spec.NextRecover.Time = t
-}
-
-// GetScheduler would return the scheduler for chaos
-func (in *PodChaos) GetScheduler() *SchedulerSpec {
-	return in.Spec.Scheduler
-}
+const (
+	// PodKillAction represents the chaos action of killing pods.
+	PodKillAction PodChaosAction = "pod-kill"
+	// PodFailureAction represents the chaos action of injecting errors to pods.
+	// This action will cause the pod to not be created for a while.
+	PodFailureAction PodChaosAction = "pod-failure"
+	// ContainerKillAction represents the chaos action of killing the container
+	ContainerKillAction PodChaosAction = "container-kill"
+)
 
 // PodChaosSpec defines the attributes that a user creates on a chaos experiment about pods.
 type PodChaosSpec struct {
@@ -122,16 +58,18 @@ type PodChaosSpec struct {
 	// Action defines the specific pod chaos action.
 	// Supported action: pod-kill / pod-failure / container-kill
 	// Default action: pod-kill
+	// +kubebuilder:validation:Enum=pod-kill;pod-failure;container-kill
 	Action PodChaosAction `json:"action"`
 
 	// Mode defines the mode to run chaos action.
 	// Supported mode: one / all / fixed / fixed-percent / random-max-percent
+	// +kubebuilder:validation:Enum=one;all;fixed;fixed-percent;random-max-percent
 	Mode PodMode `json:"mode"`
 
 	// Value is required when the mode is set to `FixedPodMode` / `FixedPercentPodMod` / `RandomMaxPercentPodMod`.
 	// If `FixedPodMode`, provide an integer of pods to do chaos action.
-	// If `FixedPercentPodMod`, provide a number from 0-100 to specify the max % of pods the server can do chaos action.
-	// IF `RandomMaxPercentPodMod`,  provide a number from 0-100 to specify the % of pods to do chaos action
+	// If `FixedPercentPodMod`, provide a number from 0-100 to specify the percent of pods the server can do chaos action.
+	// IF `RandomMaxPercentPodMod`,  provide a number from 0-100 to specify the max percent of pods to do chaos action
 	// +optional
 	Value string `json:"value"`
 
@@ -144,23 +82,16 @@ type PodChaosSpec struct {
 	// +optional
 	Duration *string `json:"duration,omitempty"`
 
-	// The duration in seconds before the object should be deleted. Value must be non-negative integer.
-	// The value zero indicates delete immediately.
-	// +optional
-	GracePeriodSeconds int64 `json:"gracePeriodSeconds"`
-
-	// Next time when this action will be applied again
-	// +optional
-	NextStart *metav1.Time `json:"nextStart,omitempty"`
-
-	// Next time when this action will be recovered
-	// +optional
-	NextRecover *metav1.Time `json:"nextRecover,omitempty"`
-
 	// ContainerName indicates the name of the container.
 	// Needed in container-kill.
 	// +optional
 	ContainerName string `json:"containerName"`
+
+	// GracePeriod is used in pod-kill action. It represents the duration in seconds before the pod should be deleted.
+	// Value must be non-negative integer. The default value is zero that indicates delete immediately.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	GracePeriod int64 `json:"gracePeriod"`
 }
 
 func (in *PodChaosSpec) GetSelector() SelectorSpec {
@@ -173,16 +104,6 @@ func (in *PodChaosSpec) GetMode() PodMode {
 
 func (in *PodChaosSpec) GetValue() string {
 	return in.Value
-}
-
-// +kubebuilder:object:root=true
-
-// PodChaosList is PodChaos list.
-type PodChaosList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata"`
-
-	Items []PodChaos `json:"items"`
 }
 
 // PodChaosStatus represents the current status of the chaos experiment about pods.
@@ -202,8 +123,4 @@ type PodStatus struct {
 	// e.g. "delete this pod" or "pause this pod duration 5m"
 	// +optional
 	Message string `json:"message"`
-}
-
-func init() {
-	SchemeBuilder.Register(&PodChaos{}, &PodChaosList{})
 }

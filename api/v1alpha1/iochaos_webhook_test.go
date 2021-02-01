@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,6 +39,8 @@ var _ = Describe("iochaos_webhook", func() {
 				expect  string
 			}
 			duration := "400s"
+			errorDuration := "400S"
+
 			tcs := []TestCase{
 				{
 					name: "simple ValidateCreate",
@@ -106,6 +108,195 @@ var _ = Describe("iochaos_webhook", func() {
 						},
 						Spec: IoChaosSpec{
 							Duration: &duration,
+						},
+					},
+					execute: func(chaos *IoChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "parse the duration and scheduler error",
+					chaos: IoChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo6",
+						},
+						Spec: IoChaosSpec{
+							Duration:  &errorDuration,
+							Scheduler: &SchedulerSpec{Cron: "xx"},
+						},
+					},
+					execute: func(chaos *IoChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate value with FixedPercentPodMode",
+					chaos: IoChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo7",
+						},
+						Spec: IoChaosSpec{
+							Value: "0",
+							Mode:  FixedPodMode,
+						},
+					},
+					execute: func(chaos *IoChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate value with FixedPercentPodMode, parse value error",
+					chaos: IoChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo8",
+						},
+						Spec: IoChaosSpec{
+							Value: "num",
+							Mode:  FixedPodMode,
+						},
+					},
+					execute: func(chaos *IoChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate value with RandomMaxPercentPodMode",
+					chaos: IoChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo9",
+						},
+						Spec: IoChaosSpec{
+							Value: "0",
+							Mode:  RandomMaxPercentPodMode,
+						},
+					},
+					execute: func(chaos *IoChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate value with RandomMaxPercentPodMode ,parse value error",
+					chaos: IoChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo10",
+						},
+						Spec: IoChaosSpec{
+							Value: "num",
+							Mode:  RandomMaxPercentPodMode,
+						},
+					},
+					execute: func(chaos *IoChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate value with FixedPercentPodMode",
+					chaos: IoChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo11",
+						},
+						Spec: IoChaosSpec{
+							Value: "101",
+							Mode:  FixedPercentPodMode,
+						},
+					},
+					execute: func(chaos *IoChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate delay",
+					chaos: IoChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo12",
+						},
+						Spec: IoChaosSpec{
+							Delay:  "1S",
+							Action: IoLatency,
+						},
+					},
+					execute: func(chaos *IoChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "parse the scheduler.cron error",
+					chaos: IoChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo15",
+						},
+						Spec: IoChaosSpec{
+							Duration:  &duration,
+							Scheduler: &SchedulerSpec{Cron: "xx"},
+						},
+					},
+					execute: func(chaos *IoChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate the duration and the scheduler.cron conflict",
+					chaos: IoChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo16",
+						},
+						Spec: IoChaosSpec{
+							Duration:  &duration,
+							Scheduler: &SchedulerSpec{Cron: "@every 1m"},
+						},
+					},
+					execute: func(chaos *IoChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate the duration and the scheduler.cron conflict",
+					chaos: IoChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo16",
+						},
+						Spec: IoChaosSpec{
+							Duration:  &duration,
+							Percent:   101,
+							Scheduler: &SchedulerSpec{Cron: "@every 1m"},
+						},
+					},
+					execute: func(chaos *IoChaos) error {
+						return chaos.ValidateCreate()
+					},
+					expect: "error",
+				},
+				{
+					name: "validate the duration and the scheduler.cron conflict",
+					chaos: IoChaos{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: metav1.NamespaceDefault,
+							Name:      "foo16",
+						},
+						Spec: IoChaosSpec{
+							Duration:  &duration,
+							Percent:   -100,
+							Scheduler: &SchedulerSpec{Cron: "@every 1m"},
 						},
 					},
 					execute: func(chaos *IoChaos) error {

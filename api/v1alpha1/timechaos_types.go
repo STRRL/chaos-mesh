@@ -1,4 +1,4 @@
-// Copyright 2020 PingCAP, Inc.
+// Copyright 2020 Chaos Mesh Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,12 +14,11 @@
 package v1alpha1
 
 import (
-	"time"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // +kubebuilder:object:root=true
+// +chaos-mesh:base
 
 // TimeChaos is the Schema for the timechaos API
 type TimeChaos struct {
@@ -38,20 +37,22 @@ type TimeChaos struct {
 type TimeChaosSpec struct {
 	// Mode defines the mode to run chaos action.
 	// Supported mode: one / all / fixed / fixed-percent / random-max-percent
+	// +kubebuilder:validation:Enum=one;all;fixed;fixed-percent;random-max-percent
 	Mode PodMode `json:"mode"`
 
 	// Value is required when the mode is set to `FixedPodMode` / `FixedPercentPodMod` / `RandomMaxPercentPodMod`.
 	// If `FixedPodMode`, provide an integer of pods to do chaos action.
-	// If `FixedPercentPodMod`, provide a number from 0-100 to specify the max % of pods the server can do chaos action.
-	// If `RandomMaxPercentPodMod`,  provide a number from 0-100 to specify the % of pods to do chaos action
+	// If `FixedPercentPodMod`, provide a number from 0-100 to specify the percent of pods the server can do chaos action.
+	// If `RandomMaxPercentPodMod`,  provide a number from 0-100 to specify the max percent of pods to do chaos action
 	// +optional
 	Value string `json:"value"`
 
 	// Selector is used to select pods that are used to inject chaos action.
 	Selector SelectorSpec `json:"selector"`
 
-	// TimeOffset defines the delta time of injected program
-	TimeOffset TimeOffset `json:"timeOffset"`
+	// TimeOffset defines the delta time of injected program. It's a possibly signed sequence of decimal numbers, such as
+	// "300ms", "-1.5h" or "2h45m". Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+	TimeOffset string `json:"timeOffset"`
 
 	// ClockIds defines all affected clock id
 	// All available options are ["CLOCK_REALTIME","CLOCK_MONOTONIC","CLOCK_PROCESS_CPUTIME_ID","CLOCK_THREAD_CPUTIME_ID",
@@ -70,20 +71,17 @@ type TimeChaosSpec struct {
 
 	// Scheduler defines some schedule rules to control the running time of the chaos experiment about time.
 	Scheduler *SchedulerSpec `json:"scheduler,omitempty"`
-
-	// Next time when this action will be applied again
-	// +optional
-	NextStart *metav1.Time `json:"nextStart,omitempty"`
-
-	// Next time when this action will be recovered
-	// +optional
-	NextRecover *metav1.Time `json:"nextRecover,omitempty"`
 }
 
 // SetDefaultValue will set default value for empty fields
 func (in *TimeChaos) SetDefaultValue() {
-	if in.Spec.ClockIds == nil || len(in.Spec.ClockIds) == 0 {
-		in.Spec.ClockIds = []string{"CLOCK_REALTIME"}
+	in.Spec.DefaultClockIds()
+}
+
+// DefaultClockIds will set default value for empty ClockIds fields
+func (in *TimeChaosSpec) DefaultClockIds() {
+	if in.ClockIds == nil || len(in.ClockIds) == 0 {
+		in.ClockIds = []string{"CLOCK_REALTIME"}
 	}
 }
 
@@ -102,98 +100,7 @@ func (in *TimeChaosSpec) GetValue() string {
 	return in.Value
 }
 
-// TimeOffset defines the delta time of injected program
-// As `clock_gettime` return a struct contains two field: `tv_sec` and `tv_nsec`.
-// `Sec` is the offset of seconds, corresponding to `tv_sec` field.
-// `NSec` is the offset of nanoseconds, corresponding to `tv_nsec` field.
-type TimeOffset struct {
-	Sec  int64 `json:"sec"`
-	NSec int64 `json:"nsec"`
-}
-
 // TimeChaosStatus defines the observed state of TimeChaos
 type TimeChaosStatus struct {
 	ChaosStatus `json:",inline"`
-}
-
-// GetDuration gets the duration of TimeChaos
-func (in *TimeChaos) GetDuration() (*time.Duration, error) {
-	if in.Spec.Duration == nil {
-		return nil, nil
-	}
-	duration, err := time.ParseDuration(*in.Spec.Duration)
-	if err != nil {
-		return nil, err
-	}
-	return &duration, nil
-}
-
-// GetNextStart gets NextStart field of TimeChaos
-func (in *TimeChaos) GetNextStart() time.Time {
-	if in.Spec.NextStart == nil {
-		return time.Time{}
-	}
-	return in.Spec.NextStart.Time
-}
-
-// SetNextStart sets NextStart field of TimeChaos
-func (in *TimeChaos) SetNextStart(t time.Time) {
-	if t.IsZero() {
-		in.Spec.NextStart = nil
-		return
-	}
-
-	if in.Spec.NextStart == nil {
-		in.Spec.NextStart = &metav1.Time{}
-	}
-	in.Spec.NextStart.Time = t
-}
-
-// GetNextRecover get NextRecover field of TimeChaos
-func (in *TimeChaos) GetNextRecover() time.Time {
-	if in.Spec.NextRecover == nil {
-		return time.Time{}
-	}
-	return in.Spec.NextRecover.Time
-}
-
-// SetNextRecover sets NextRecover field of TimeChaos
-func (in *TimeChaos) SetNextRecover(t time.Time) {
-	if t.IsZero() {
-		in.Spec.NextRecover = nil
-		return
-	}
-
-	if in.Spec.NextRecover == nil {
-		in.Spec.NextRecover = &metav1.Time{}
-	}
-	in.Spec.NextRecover.Time = t
-}
-
-// GetScheduler returns the scheduler of TimeChaos
-func (in *TimeChaos) GetScheduler() *SchedulerSpec {
-	return in.Spec.Scheduler
-}
-
-// GetStatus returns the status of TimeChaos
-func (in *TimeChaos) GetStatus() *ChaosStatus {
-	return &in.Status.ChaosStatus
-}
-
-// IsDeleted returns whether this resource has been deleted
-func (in *TimeChaos) IsDeleted() bool {
-	return !in.DeletionTimestamp.IsZero()
-}
-
-// +kubebuilder:object:root=true
-
-// TimeChaosList contains a list of TimeChaos
-type TimeChaosList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []TimeChaos `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&TimeChaos{}, &TimeChaosList{})
 }

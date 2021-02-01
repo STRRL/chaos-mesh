@@ -1,3 +1,16 @@
+// Copyright 2020 Chaos Mesh Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package e2e
 
 import (
@@ -17,7 +30,8 @@ import (
 	e2epod "k8s.io/kubernetes/test/e2e/framework/pod"
 	utilnet "k8s.io/utils/net"
 
-	"github.com/pingcap/chaos-mesh/test"
+	"github.com/chaos-mesh/chaos-mesh/test"
+	e2econfig "github.com/chaos-mesh/chaos-mesh/test/e2e/config"
 
 	// ensure auth plugins are loaded
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -100,36 +114,43 @@ func setupSuite() {
 }
 
 var _ = ginkgo.SynchronizedBeforeSuite(func() []byte {
-	ginkgo.By("Clear all helm releases")
-	helmClearCmd := "helm ls --all --short | xargs -n 1 -r helm delete --purge"
-	if err := exec.Command("sh", "-c", helmClearCmd).Run(); err != nil {
-		framework.Failf("failed to clear helm releases (cmd: %q, error: %v", helmClearCmd, err)
+	if e2econfig.TestConfig.InstallChaosMesh {
+		ginkgo.By("Clear all helm releases")
+		helmClearCmd := "helm ls --all --short | xargs -n 1 -r helm delete --purge"
+		if err := exec.Command("sh", "-c", helmClearCmd).Run(); err != nil {
+			framework.Failf("failed to clear helm releases (cmd: %q, error: %v", helmClearCmd, err)
+		}
+		ginkgo.By("Clear non-kubernetes apiservices")
+		clearNonK8SAPIServicesCmd := "kubectl delete apiservices -l kube-aggregator.kubernetes.io/automanaged!=onstart"
+		if err := exec.Command("sh", "-c", clearNonK8SAPIServicesCmd).Run(); err != nil {
+			framework.Failf("failed to clear non-kubernetes apiservices (cmd: %q, error: %v", clearNonK8SAPIServicesCmd, err)
+		}
+
+		setupSuite()
+
+		// Get clients
+		config, err := framework.LoadConfig()
+		framework.ExpectNoError(err, "failed to load config")
+		kubeCli, err := kubernetes.NewForConfig(config)
+		framework.ExpectNoError(err, "failed to create clientset")
+		aggrCli, err := aggregatorclientset.NewForConfig(config)
+		framework.ExpectNoError(err, "failed to create clientset")
+		apiExtCli, err := apiextensionsclientset.NewForConfig(config)
+		framework.ExpectNoError(err, "failed to create clientset")
+		oa := test.NewOperatorAction(kubeCli, aggrCli, apiExtCli, e2econfig.TestConfig)
+		ocfg := test.NewDefaultOperatorConfig()
+		ocfg.Manager.Image = e2econfig.TestConfig.ManagerImage
+		ocfg.Manager.Tag = e2econfig.TestConfig.ManagerTag
+		ocfg.Daemon.Image = e2econfig.TestConfig.DaemonImage
+		ocfg.Daemon.Tag = e2econfig.TestConfig.DaemonTag
+		ocfg.DNSImage = e2econfig.TestConfig.ChaosDNSImage
+
+		oa.CleanCRDOrDie()
+		err = oa.InstallCRD(ocfg)
+		framework.ExpectNoError(err, "failed to install crd")
+		err = oa.DeployOperator(ocfg)
+		framework.ExpectNoError(err, "failed to install chaos-mesh")
 	}
-	ginkgo.By("Clear non-kubernetes apiservices")
-	clearNonK8SAPIServicesCmd := "kubectl delete apiservices -l kube-aggregator.kubernetes.io/automanaged!=onstart"
-	if err := exec.Command("sh", "-c", clearNonK8SAPIServicesCmd).Run(); err != nil {
-		framework.Failf("failed to clear non-kubernetes apiservices (cmd: %q, error: %v", clearNonK8SAPIServicesCmd, err)
-	}
-
-	setupSuite()
-
-	// Get clients
-	config, err := framework.LoadConfig()
-	framework.ExpectNoError(err, "failed to load config")
-	kubeCli, err := kubernetes.NewForConfig(config)
-	framework.ExpectNoError(err, "failed to create clientset")
-	aggrCli, err := aggregatorclientset.NewForConfig(config)
-	framework.ExpectNoError(err, "failed to create clientset")
-	apiExtCli, err := apiextensionsclientset.NewForConfig(config)
-	framework.ExpectNoError(err, "failed to create clientset")
-	oa := test.NewOperatorAction(kubeCli, aggrCli, apiExtCli, test.NewDefaultConfig())
-	ocfg := test.NewDefaultOperatorConfig()
-
-	oa.CleanCRDOrDie()
-	err = oa.InstallCRD(ocfg)
-	framework.ExpectNoError(err, "failed to install crd")
-	err = oa.DeployOperator(ocfg)
-	framework.ExpectNoError(err, "failed to install chaos-mesh")
 	return nil
 }, func(data []byte) {
 	// Run on all Ginkgo nodes

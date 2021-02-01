@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+
+# Copyright 2020 Chaos Mesh Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 set -e
 
 ROOT=$(unset CDPATH && cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)
@@ -9,15 +23,17 @@ usage() {
 This script use kind to create Kubernetes cluster,about kind please refer: https://kind.sigs.k8s.io/
 Before run this script,please ensure that:
 * have installed docker
-* have installed kind and kind's version == v0.4.0
+* have installed helm
 Options:
        -h,--help               prints the usage message
-       -n,--name               name of the Kubernetes cluster,default value: kind
-       -c,--nodeNum            the count of the cluster nodes,default value: 3
-       -k,--k8sVersion         version of the Kubernetes cluster,default value: v1.17.2
-       -v,--volumeNum          the volumes number of each kubernetes node,default value: 5
+       -n,--name               name of the Kubernetes cluster, default value: kind
+       -c,--nodeNum            the count of the cluster nodes, default value: 3
+       -k,--k8sVersion         version of the Kubernetes cluster, default value: v1.15.6
+       -v,--volumeNum          the volumes number of each kubernetes node, default value: 5
+       -r,--registryName       the name of local docker registry, default value: registry
+       -p,--registryPort       the published port of local docker registry, default value: 5000
 Usage:
-    $0 --name testCluster --nodeNum 4 --k8sVersion v1.17.2
+    $0 --name testCluster --nodeNum 4 --k8sVersion v1.15.6
 EOF
 }
 
@@ -46,6 +62,16 @@ case $key in
     shift
     shift
     ;;
+    -r|--registryName)
+    registryName="$2"
+    shift
+    shift
+    ;;
+    -p|--registryPort)
+    registryPort="$2"
+    shift
+    shift
+    ;;
     -h|--help)
     usage
     exit 0
@@ -60,25 +86,37 @@ done
 
 clusterName=${clusterName:-kind}
 nodeNum=${nodeNum:-3}
-k8sVersion=${k8sVersion:-v1.17.2}
+k8sVersion=${k8sVersion:-v1.15.6}
 volumeNum=${volumeNum:-5}
+registryName=${registryName:-registry}
+registryPort=${registryPort:-5000}
 
 echo "clusterName: ${clusterName}"
 echo "nodeNum: ${nodeNum}"
 echo "k8sVersion: ${k8sVersion}"
 echo "volumeNum: ${volumeNum}"
+echo "registryName: ${registryName}"
+echo "registryPort: ${registryPort}"
 
-# check requirements
-for requirement in kind kubectl helm docker
-do
-    echo "############ check ${requirement} ##############"
-    if hash ${requirement} 2>/dev/null;then
-        echo "${requirement} have installed"
-    else
-        echo "this script needs ${requirement}, please install ${requirement} first."
-        exit 1
-    fi
-done
+source "${ROOT}/hack/lib.sh"
+
+echo "ensuring kind"
+hack::ensure_kind
+echo "ensuring kubectl"
+hack::ensure_kubectl
+
+OUTPUT_BIN=${ROOT}/output/bin
+KUBECTL_BIN=${OUTPUT_BIN}/kubectl
+HELM_BIN=${OUTPUT_BIN}/helm
+KIND_BIN=${OUTPUT_BIN}/kind
+
+# create registry container unless it already exists
+running="$(docker inspect -f '{{.State.Running}}' "${registryName}" 2>/dev/null || true)"
+if [ "${running}" != 'true' ]; then
+  docker run \
+    -d --restart=always -p "${registryPort}:5000" --name "${registryName}" \
+    registry:2
+fi
 
 echo "############# start create cluster:[${clusterName}] #############"
 workDir=${HOME}/kind/${clusterName}
@@ -96,22 +134,21 @@ configFile=${workDir}/kind-config.yaml
 
 cat <<EOF > ${configFile}
 kind: Cluster
-apiVersion: kind.sigs.k8s.io/v1alpha3
+apiVersion: kind.x-k8s.io/v1alpha4
 kubeadmConfigPatches:
 - |
-  apiVersion: kubeadm.k8s.io/v1alpha3
+  apiVersion: kubeadm.k8s.io/v1beta2
   kind: ClusterConfiguration
   metadata:
     name: config
   apiServerExtraArgs:
     enable-admission-plugins: NodeRestriction,MutatingAdmissionWebhook,ValidatingAdmissionWebhook
+containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:${registryPort}"]
+    endpoint = ["http://${registryName}:${registryPort}"]
 nodes:
 - role: control-plane
-  extraPortMappings:
-  - containerPort: 5000
-    hostPort: 5000
-    listenAddress: 127.0.0.1
-    protocol: TCP
 EOF
 
 for ((i=0;i<${nodeNum};i++))
@@ -132,89 +169,28 @@ EOF
 done
 
 echo "start to create k8s cluster"
-kind create cluster --config ${configFile} --image kindest/node:${k8sVersion} --name=${clusterName}
-kind get kubeconfig --name=${clusterName} > ${kubeconfigPath}
+${KIND_BIN} create cluster --config ${configFile} --image kindest/node:${k8sVersion} --name=${clusterName}
+${KIND_BIN} get kubeconfig --name=${clusterName} > ${kubeconfigPath}
 export KUBECONFIG=${kubeconfigPath}
 
-echo "deploy docker registry in kind"
-registryNode=${clusterName}-control-plane
-registryNodeIP=$(kubectl get nodes ${registryNode} -o template --template='{{range.status.addresses}}{{if eq .type "InternalIP"}}{{.address}}{{end}}{{end}}')
-registryFile=${workDir}/registry.yaml
+echo "connect the local docker registry to the cluster network"
 
-cat <<EOF >${registryFile}
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: registry
-spec:
-  selector:
-    matchLabels:
-      app: registry
-  template:
-    metadata:
-      labels:
-        app: registry
-    spec:
-      hostNetwork: true
-      nodeSelector:
-        kubernetes.io/hostname: ${registryNode}
-      tolerations:
-      - key: node-role.kubernetes.io/master
-        operator: "Equal"
-        effect: "NoSchedule"
-      containers:
-      - name: registry
-        image: registry:2
-        volumeMounts:
-        - name: data
-          mountPath: /data
-      volumes:
-      - name: data
-        hostPath:
-          path: /data
----
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: registry-proxy
-  labels:
-    app: registry-proxy
-spec:
-  selector:
-    matchLabels:
-      app: registry-proxy
-  template:
-    metadata:
-      labels:
-        app: registry-proxy
-    spec:
-      hostNetwork: true
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: NotIn
-                values:
-                  - ${registryNode}
-      tolerations:
-      - key: node-role.kubernetes.io/master
-        operator: "Equal"
-        effect: "NoSchedule"
-      containers:
-        - name: socat
-          image: alpine/socat:1.0.5
-          args:
-          - tcp-listen:5000,fork,reuseaddr
-          - tcp-connect:${registryNodeIP}:5000
-EOF
-kubectl apply -f ${registryFile}
+set +e
 
-kubectl apply -f ${ROOT}/manifests/local-volume-provisioner.yaml
-kubectl apply -f ${ROOT}/manifests/tiller-rbac.yaml
+connected=$(docker network connect "kind" "${registryName}" 2>&1)
+exitCode=$?
 
-kubectl create ns chaos-testing
+if [[ exitCode -ne 0 ]] && [[ $connected != *"already exists"* ]]; then
+  echo "error when connecting docker registry: ${connected}"
+  exit 1
+fi
+
+set -e
+
+${KUBECTL_BIN} apply -f ${ROOT}/manifests/local-volume-provisioner.yaml
+${KUBECTL_BIN} apply -f ${ROOT}/manifests/tiller-rbac.yaml
+
+$KUBECTL_BIN create ns chaos-testing
 
 if [[ $(helm version --client --short) == "Client: v2"* ]]; then helm init --service-account=tiller --wait; fi
 
