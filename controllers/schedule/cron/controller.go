@@ -33,7 +33,7 @@ import (
 	"github.com/chaos-mesh/chaos-mesh/controllers/utils/builder"
 	"github.com/chaos-mesh/chaos-mesh/controllers/utils/controller"
 	"github.com/chaos-mesh/chaos-mesh/controllers/utils/recorder"
-	"github.com/chaos-mesh/chaos-mesh/pkg/workflow/controllers"
+	"github.com/chaos-mesh/chaos-mesh/controllers/workflow"
 )
 
 type Reconciler struct {
@@ -112,13 +112,13 @@ func (r *Reconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 					break
 				}
 			} else {
-				workflow := items.Index(i).Addr().Interface().(*v1alpha1.Workflow)
-				if !controllers.WorkflowConditionEqualsTo(workflow.Status, v1alpha1.WorkflowConditionAccomplished, corev1.ConditionTrue) {
+				targetWorkflow := items.Index(i).Addr().Interface().(*v1alpha1.Workflow)
+				if !workflow.WorkflowConditionEqualsTo(targetWorkflow.Status, v1alpha1.WorkflowConditionAccomplished, corev1.ConditionTrue) {
 					shouldSpawn = false
 					r.Recorder.Event(schedule, recorder.ScheduleForbid{
-						RunningName: workflow.GetObjectMeta().Name,
+						RunningName: targetWorkflow.GetObjectMeta().Name,
 					})
-					r.Log.Info("forbid to spawn new workflow", "running", workflow.GetChaos().Name)
+					r.Log.Info("forbid to spawn new workflow", "running", targetWorkflow.GetChaos().Name)
 					break
 				}
 			}

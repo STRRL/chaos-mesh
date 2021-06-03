@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/chaos-mesh/chaos-mesh/api/v1alpha1"
-	wfcontrollers "github.com/chaos-mesh/chaos-mesh/pkg/workflow/controllers"
+	"github.com/chaos-mesh/chaos-mesh/controllers/workflow"
 )
 
 type WorkflowRepository interface {
@@ -254,9 +254,9 @@ func convertWorkflow(kubeWorkflow v1alpha1.Workflow) Workflow {
 		result.EndTime = kubeWorkflow.Status.EndTime.Format(time.RFC3339)
 	}
 
-	if wfcontrollers.WorkflowConditionEqualsTo(kubeWorkflow.Status, v1alpha1.WorkflowConditionAccomplished, corev1.ConditionTrue) {
+	if workflow.WorkflowConditionEqualsTo(kubeWorkflow.Status, v1alpha1.WorkflowConditionAccomplished, corev1.ConditionTrue) {
 		result.Status = WorkflowSucceed
-	} else if wfcontrollers.WorkflowConditionEqualsTo(kubeWorkflow.Status, v1alpha1.WorkflowConditionScheduled, corev1.ConditionTrue) {
+	} else if workflow.WorkflowConditionEqualsTo(kubeWorkflow.Status, v1alpha1.WorkflowConditionScheduled, corev1.ConditionTrue) {
 		result.Status = WorkflowRunning
 	} else {
 		result.Status = WorkflowUnknown
@@ -337,7 +337,7 @@ func convertWorkflowNode(kubeWorkflowNode v1alpha1.WorkflowNode) (Node, error) {
 		}
 	}
 
-	if wfcontrollers.WorkflowNodeFinished(kubeWorkflowNode.Status) {
+	if workflow.WorkflowNodeFinished(kubeWorkflowNode.Status) {
 		result.State = NodeSucceed
 	} else {
 		result.State = NodeRunning

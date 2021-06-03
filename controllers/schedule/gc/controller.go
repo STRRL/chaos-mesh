@@ -34,7 +34,7 @@ import (
 	"github.com/chaos-mesh/chaos-mesh/controllers/utils/builder"
 	"github.com/chaos-mesh/chaos-mesh/controllers/utils/controller"
 	"github.com/chaos-mesh/chaos-mesh/controllers/utils/recorder"
-	"github.com/chaos-mesh/chaos-mesh/pkg/workflow/controllers"
+	"github.com/chaos-mesh/chaos-mesh/controllers/workflow"
 )
 
 type Reconciler struct {
@@ -104,13 +104,13 @@ func (r *Reconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 				}
 			} else { // A workflow
 				if schedule.Spec.Type == v1alpha1.ScheduleTypeWorkflow {
-					workflow, ok := obj.(*v1alpha1.Workflow)
+					targetWorkflow, ok := obj.(*v1alpha1.Workflow)
 					if ok {
-						finished := controllers.WorkflowConditionEqualsTo(workflow.Status, v1alpha1.WorkflowConditionAccomplished, corev1.ConditionTrue)
+						finished := workflow.WorkflowConditionEqualsTo(targetWorkflow.Status, v1alpha1.WorkflowConditionAccomplished, corev1.ConditionTrue)
 
 						if !finished {
 							r.Recorder.Event(schedule, recorder.ScheduleSkipRemoveHistory{
-								RunningName: workflow.Name,
+								RunningName: targetWorkflow.Name,
 							})
 							continue
 						}
