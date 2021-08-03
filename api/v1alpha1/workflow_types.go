@@ -54,10 +54,6 @@ func (in *Workflow) GetChaos() *ChaosInstance {
 	return instance
 }
 
-func (in *Workflow) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
-}
-
 const KindWorkflow = "Workflow"
 
 type WorkflowSpec struct {

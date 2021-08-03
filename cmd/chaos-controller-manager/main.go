@@ -128,7 +128,8 @@ func Run(params RunParams) error {
 	hookServer.CertDir = ccfg.ControllerCfg.CertsDir
 	conf := config.NewConfigWatcherConf()
 
-	stopCh := ctrl.SetupSignalHandler()
+	controllerRuntimeSignalHandler := ctrl.SetupSignalHandler()
+	stopCh := controllerRuntimeSignalHandler.Done()
 
 	if ccfg.ControllerCfg.PprofAddr != "0" {
 		go func() {
@@ -164,7 +165,7 @@ func Run(params RunParams) error {
 	)
 
 	setupLog.Info("Starting manager")
-	if err := mgr.Start(stopCh); err != nil {
+	if err := mgr.Start(controllerRuntimeSignalHandler); err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}

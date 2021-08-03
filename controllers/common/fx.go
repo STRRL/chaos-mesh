@@ -17,12 +17,13 @@ import (
 	"context"
 	"reflect"
 
+	"github.com/chaos-mesh/chaos-mesh/api/v1alpha1"
+
 	"github.com/go-logr/logr"
 	"go.uber.org/fx"
-	"k8s.io/apimachinery/pkg/runtime"
 	k8sTypes "k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -39,20 +40,20 @@ type ChaosImplPair struct {
 	Object InnerObjectWithSelector
 	Impl   ChaosImpl
 
-	ObjectList runtime.Object
-	Controlls  []runtime.Object
+	ObjectList v1alpha1.ChaosList
+	Controlls  []v1alpha1.GenericChaos
 }
 
 type Params struct {
 	fx.In
 
 	Mgr             ctrl.Manager
-	Client          client.Client
+	Client          crclient.Client
 	Logger          logr.Logger
 	Selector        *selector.Selector
 	RecorderBuilder *recorder.RecorderBuilder
 	Impls           []*ChaosImplPair `group:"impl"`
-	Reader          client.Reader    `name:"no-cache"`
+	Reader          crclient.Reader  `name:"no-cache"`
 }
 
 func NewController(params Params) (types.Controller, error) {
@@ -76,15 +77,15 @@ func NewController(params Params) (types.Controller, error) {
 		if len(pair.Controlls) > 0 {
 			pair := pair
 			for _, obj := range pair.Controlls {
-				builder = builder.Watches(&source.Kind{Type: obj}, &handler.EnqueueRequestsFromMapFunc{
-					ToRequests: handler.ToRequestsFunc(func(obj handler.MapObject) []reconcile.Request {
-						reqs := []reconcile.Request{}
+				builder = builder.Watches(&source.Kind{Type: obj},
+					handler.EnqueueRequestsFromMapFunc(func(obj crclient.Object) []reconcile.Request {
+						var reqs []reconcile.Request
 						objName := k8sTypes.NamespacedName{
-							Namespace: obj.Meta.GetNamespace(),
-							Name:      obj.Meta.GetName(),
+							Namespace: obj.GetNamespace(),
+							Name:      obj.GetName(),
 						}
 
-						list := pair.ObjectList.DeepCopyObject()
+						list := pair.ObjectList.DeepCopyList()
 						err := client.List(context.TODO(), list)
 						if err != nil {
 							setupLog.Error(err, "fail to list object")
@@ -96,8 +97,8 @@ func NewController(params Params) (types.Controller, error) {
 							for _, record := range item.GetStatus().Experiment.Records {
 								if controller.ParseNamespacedName(record.Id) == objName {
 									id := k8sTypes.NamespacedName{
-										Namespace: item.GetObjectMeta().Namespace,
-										Name:      item.GetObjectMeta().Name,
+										Namespace: item.GetNamespace(),
+										Name:      item.GetName(),
 									}
 									setupLog.Info("mapping requests", "source", objName, "target", id)
 									reqs = append(reqs, reconcile.Request{
@@ -108,11 +109,9 @@ func NewController(params Params) (types.Controller, error) {
 						}
 
 						return reqs
-					}),
-				})
+					}))
 			}
 		}
-
 		err := builder.Complete(&Reconciler{
 			Impl:     pair.Impl,
 			Object:   pair.Object,
@@ -125,8 +124,6 @@ func NewController(params Params) (types.Controller, error) {
 		if err != nil {
 			return "", err
 		}
-
 	}
-
 	return "records", nil
 }

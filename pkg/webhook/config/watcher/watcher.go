@@ -14,6 +14,7 @@
 package watcher
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"html/template"
@@ -121,9 +122,11 @@ func validate(c *K8sConfigMapWatcher) error {
 
 // Watch watches for events impacting watched ConfigMaps and emits their events across a channel
 func (c *K8sConfigMapWatcher) Watch(notifyMe chan<- interface{}, stopCh <-chan struct{}) error {
+	// FIXME: use context to replace stopCh
+	ctx := context.TODO()
 	log.Info("Watching for ConfigMaps for changes",
 		"template namespace", c.TemplateNamespace, "labels", c.ConfigLabels)
-	templateWatcher, err := c.client.ConfigMaps(c.TemplateNamespace).Watch(metav1.ListOptions{
+	templateWatcher, err := c.client.ConfigMaps(c.TemplateNamespace).Watch(ctx, metav1.ListOptions{
 		LabelSelector: mapStringStringToLabelSelector(c.TemplateLabels),
 	})
 	if err != nil {
@@ -135,7 +138,7 @@ func (c *K8sConfigMapWatcher) Watch(notifyMe chan<- interface{}, stopCh <-chan s
 		targetNamespace = c.TargetNamespace
 	}
 
-	configWatcher, err := c.client.ConfigMaps(targetNamespace).Watch(metav1.ListOptions{
+	configWatcher, err := c.client.ConfigMaps(targetNamespace).Watch(ctx, metav1.ListOptions{
 		LabelSelector: mapStringStringToLabelSelector(c.ConfigLabels),
 	})
 	if err != nil {
@@ -275,8 +278,10 @@ func (c *K8sConfigMapWatcher) GetInjectionConfigs() (map[string][]*config.Inject
 
 // GetTemplates returns a map of common templates
 func (c *K8sConfigMapWatcher) GetTemplates() (map[string]string, error) {
+	// FIXME: add this ctx into parameters.
+	ctx := context.TODO()
 	log.Info("Fetching Template Configs...")
-	templateList, err := c.client.ConfigMaps(c.TemplateNamespace).List(metav1.ListOptions{
+	templateList, err := c.client.ConfigMaps(c.TemplateNamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: mapStringStringToLabelSelector(c.TemplateLabels),
 	})
 	if err != nil {
@@ -296,9 +301,11 @@ func (c *K8sConfigMapWatcher) GetTemplates() (map[string]string, error) {
 
 // GetConfigs returns the list of template args config
 func (c *K8sConfigMapWatcher) GetConfigs() ([]*config.TemplateArgs, error) {
+	// FIXME: add this ctx into parameters.
+	ctx := context.TODO()
 	log.Info("Fetching Configs...")
 	// List all the configs with the required label selector
-	configList, err := c.client.ConfigMaps("").List(metav1.ListOptions{
+	configList, err := c.client.ConfigMaps("").List(ctx, metav1.ListOptions{
 		LabelSelector: mapStringStringToLabelSelector(c.ConfigLabels),
 	})
 	if err != nil {

@@ -19,6 +19,8 @@ import (
 	"net/http"
 	"strings"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	authv1 "k8s.io/api/authorization/v1"
 	authorizationv1 "k8s.io/client-go/kubernetes/typed/authorization/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -181,7 +183,8 @@ func (v *AuthValidator) auth(username string, groups []string, namespace string,
 		},
 	}
 
-	response, err := v.authCli.SubjectAccessReviews().Create(&sar)
+	// FIXME: use upper context from parameter
+	response, err := v.authCli.SubjectAccessReviews().Create(context.TODO(), &sar, metav1.CreateOptions{})
 	if err != nil {
 		return false, err
 	}

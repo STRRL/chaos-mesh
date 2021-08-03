@@ -113,7 +113,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				if !controllers.WorkflowConditionEqualsTo(workflow.Status, v1alpha1.WorkflowConditionAccomplished, corev1.ConditionTrue) {
 					shouldSpawn = false
 					r.Recorder.Event(schedule, recorder.ScheduleForbid{
-						RunningName: workflow.GetObjectMeta().Name,
+						RunningName: workflow.GetName(),
 					})
 					r.Log.Info("forbid to spawn new workflow", "running", workflow.GetChaos().Name)
 					break

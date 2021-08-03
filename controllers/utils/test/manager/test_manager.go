@@ -32,8 +32,6 @@ func NewTestManager(lc fx.Lifecycle, options *ctrl.Options, cfg *rest.Config) (c
 	if ccfg.ControllerCfg.Burst > 0 {
 		cfg.Burst = ccfg.ControllerCfg.Burst
 	}
-	ch := make(chan struct{})
-
 	mgr, err := ctrl.NewManager(cfg, *options)
 
 	if err != nil {
@@ -43,7 +41,7 @@ func NewTestManager(lc fx.Lifecycle, options *ctrl.Options, cfg *rest.Config) (c
 		OnStart: func(context.Context) error {
 			fmt.Println("Starting manager")
 			go func() {
-				if err := mgr.Start(ch); err != nil {
+				if err := mgr.Start(context.TODO()); err != nil {
 					fmt.Println(err)
 					os.Exit(1)
 				}
@@ -52,7 +50,6 @@ func NewTestManager(lc fx.Lifecycle, options *ctrl.Options, cfg *rest.Config) (c
 		},
 		OnStop: func(ctx context.Context) error {
 			fmt.Println("Stopping manager")
-			close(ch)
 			return nil
 		},
 	})

@@ -75,7 +75,7 @@ var _ = Describe("Finalizer", func() {
 					if err != nil {
 						return false, err
 					}
-					return len(chaos.GetObjectMeta().GetFinalizers()) > 0 && chaos.GetObjectMeta().GetFinalizers()[0] == RecordFinalizer, nil
+					return len(chaos.GetFinalizers()) > 0 && chaos.GetFinalizers()[0] == RecordFinalizer, nil
 				})
 				Expect(err).ToNot(HaveOccurred())
 			}

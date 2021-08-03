@@ -14,6 +14,7 @@
 package provider
 
 import (
+	"context"
 	"math"
 
 	"github.com/go-logr/logr"
@@ -167,7 +168,7 @@ func NewControlPlaneCacheReader(logger logr.Logger) (controlPlaneCacheReader, er
 	}
 	// TODO: store the channel and use it to stop
 	go func() {
-		err := cache.Start(make(chan struct{}))
+		err := cache.Start(context.TODO())
 		if err != nil {
 			logger.Error(err, "fail to start cached client")
 		}
@@ -178,15 +179,12 @@ func NewControlPlaneCacheReader(logger logr.Logger) (controlPlaneCacheReader, er
 		return controlPlaneCacheReader{}, err
 	}
 
-	cachedClient := &client.DelegatingClient{
-		Reader: &client.DelegatingReader{
-			CacheReader:  cache,
-			ClientReader: c,
-		},
-		Writer:       c,
-		StatusClient: c,
-	}
-
+	cachedClient, err := client.NewDelegatingClient(client.NewDelegatingClientInput{
+		CacheReader:       cache,
+		Client:            c,
+		UncachedObjects:   nil,
+		CacheUnstructured: false,
+	})
 	return controlPlaneCacheReader{
 		Reader: cachedClient,
 	}, nil

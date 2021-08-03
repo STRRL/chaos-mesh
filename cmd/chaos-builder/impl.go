@@ -44,11 +44,6 @@ func (in *{{.Type}}) IsPaused() bool {
 	return true
 }
 
-// GetObjectMeta would return the ObjectMeta for chaos
-func (in *{{.Type}}) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
-}
-
 // GetDuration would return the duration for chaos
 func (in *{{.Type}}Spec) GetDuration() (*time.Duration, error) {
 	if in.Duration == nil {

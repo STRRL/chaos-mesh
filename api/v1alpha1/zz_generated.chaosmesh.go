@@ -36,11 +36,6 @@ func (in *AWSChaos) IsPaused() bool {
 	return true
 }
 
-// GetObjectMeta would return the ObjectMeta for chaos
-func (in *AWSChaos) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
-}
-
 // GetDuration would return the duration for chaos
 func (in *AWSChaosSpec) GetDuration() (*time.Duration, error) {
 	if in.Duration == nil {
@@ -162,11 +157,6 @@ func (in *DNSChaos) IsPaused() bool {
 	return true
 }
 
-// GetObjectMeta would return the ObjectMeta for chaos
-func (in *DNSChaos) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
-}
-
 // GetDuration would return the duration for chaos
 func (in *DNSChaosSpec) GetDuration() (*time.Duration, error) {
 	if in.Duration == nil {
@@ -282,11 +272,6 @@ func (in *GCPChaos) IsPaused() bool {
 		return false
 	}
 	return true
-}
-
-// GetObjectMeta would return the ObjectMeta for chaos
-func (in *GCPChaos) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
 }
 
 // GetDuration would return the duration for chaos
@@ -410,11 +395,6 @@ func (in *HTTPChaos) IsPaused() bool {
 	return true
 }
 
-// GetObjectMeta would return the ObjectMeta for chaos
-func (in *HTTPChaos) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
-}
-
 // GetDuration would return the duration for chaos
 func (in *HTTPChaosSpec) GetDuration() (*time.Duration, error) {
 	if in.Duration == nil {
@@ -530,11 +510,6 @@ func (in *IOChaos) IsPaused() bool {
 		return false
 	}
 	return true
-}
-
-// GetObjectMeta would return the ObjectMeta for chaos
-func (in *IOChaos) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
 }
 
 // GetDuration would return the duration for chaos
@@ -654,11 +629,6 @@ func (in *JVMChaos) IsPaused() bool {
 	return true
 }
 
-// GetObjectMeta would return the ObjectMeta for chaos
-func (in *JVMChaos) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
-}
-
 // GetDuration would return the duration for chaos
 func (in *JVMChaosSpec) GetDuration() (*time.Duration, error) {
 	if in.Duration == nil {
@@ -774,11 +744,6 @@ func (in *KernelChaos) IsPaused() bool {
 		return false
 	}
 	return true
-}
-
-// GetObjectMeta would return the ObjectMeta for chaos
-func (in *KernelChaos) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
 }
 
 // GetDuration would return the duration for chaos
@@ -898,11 +863,6 @@ func (in *NetworkChaos) IsPaused() bool {
 	return true
 }
 
-// GetObjectMeta would return the ObjectMeta for chaos
-func (in *NetworkChaos) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
-}
-
 // GetDuration would return the duration for chaos
 func (in *NetworkChaosSpec) GetDuration() (*time.Duration, error) {
 	if in.Duration == nil {
@@ -1018,11 +978,6 @@ func (in *PodChaos) IsPaused() bool {
 		return false
 	}
 	return true
-}
-
-// GetObjectMeta would return the ObjectMeta for chaos
-func (in *PodChaos) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
 }
 
 // GetDuration would return the duration for chaos
@@ -1146,11 +1101,6 @@ func (in *StressChaos) IsPaused() bool {
 	return true
 }
 
-// GetObjectMeta would return the ObjectMeta for chaos
-func (in *StressChaos) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
-}
-
 // GetDuration would return the duration for chaos
 func (in *StressChaosSpec) GetDuration() (*time.Duration, error) {
 	if in.Duration == nil {
@@ -1266,11 +1216,6 @@ func (in *TimeChaos) IsPaused() bool {
 		return false
 	}
 	return true
-}
-
-// GetObjectMeta would return the ObjectMeta for chaos
-func (in *TimeChaos) GetObjectMeta() *metav1.ObjectMeta {
-	return &in.ObjectMeta
 }
 
 // GetDuration would return the duration for chaos

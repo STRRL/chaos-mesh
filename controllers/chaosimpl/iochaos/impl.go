@@ -22,7 +22,6 @@ import (
 	"go.uber.org/fx"
 	v1 "k8s.io/api/core/v1"
 	k8sError "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -47,7 +46,7 @@ type Impl struct {
 func (impl *Impl) Apply(ctx context.Context, index int, records []*v1alpha1.Record, obj v1alpha1.InnerObject) (v1alpha1.Phase, error) {
 	// The only possible phase to get in here is "Not Injected" or "Not Injected/Wait"
 
-	impl.Log.Info("iochaos Apply", "namespace", obj.GetObjectMeta().Namespace, "name", obj.GetObjectMeta().Name)
+	impl.Log.Info("iochaos Apply", "namespace", obj.GetNamespace(), "name", obj.GetName())
 	iochaos := obj.(*v1alpha1.IOChaos)
 	if iochaos.Status.Instances == nil {
 		iochaos.Status.Instances = make(map[string]int64)
@@ -206,7 +205,7 @@ func NewImpl(c client.Client, b *podiochaosmanager.Builder, log logr.Logger) *co
 			builder: b,
 		},
 		ObjectList: &v1alpha1.IOChaosList{},
-		Controlls:  []runtime.Object{&v1alpha1.PodIOChaos{}},
+		Controlls:  []v1alpha1.GenericChaos{&v1alpha1.PodIOChaos{}},
 	}
 }
 

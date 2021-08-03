@@ -35,8 +35,8 @@ import (
 // Only commands in chaos-mesh components should use this way
 // for target pod, use ExecBypass
 func Exec(ctx context.Context, pod v1.Pod, cmd string, c *kubernetes.Clientset) (string, error) {
-	name := pod.GetObjectMeta().GetName()
-	namespace := pod.GetObjectMeta().GetNamespace()
+	name := pod.GetName()
+	namespace := pod.GetNamespace()
 	// TODO: if `containerNames` is set and specific container is injected chaos,
 	// need to use THE name rather than the first one.
 	// till 20/11/10 only podchaos and kernelchaos support `containerNames`, so not set it for now

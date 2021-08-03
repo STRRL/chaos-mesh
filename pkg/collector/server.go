@@ -136,7 +136,7 @@ func NewServer(
 }
 
 // Register starts collectors manager.
-func Register(s *Server, controllerRuntimeSignalHandler context.Context) {
+func Register(controllerRuntimeSignalHandler context.Context, s *Server) {
 	go func() {
 		log.Info("Starting collector")
 		if err := s.Manager.Start(controllerRuntimeSignalHandler); err != nil {

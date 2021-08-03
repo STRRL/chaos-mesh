@@ -98,7 +98,7 @@ func TestHostNetworkOption(t *testing.T) {
 			AllowHostNetworkTesting: testCase.enableHostNetworkTesting,
 		}
 
-		_, err := h.Reconcile(ctrl.Request{
+		_, err := h.Reconcile(context.TODO(), ctrl.Request{
 			NamespacedName: types.NamespacedName{
 				Namespace: metav1.NamespaceDefault,
 				Name:      "p0",
