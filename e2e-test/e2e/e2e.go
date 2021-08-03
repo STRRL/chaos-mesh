@@ -14,9 +14,12 @@
 package e2e
 
 import (
-	// load pprof
-	_ "net/http/pprof"
-	"os/exec"
+	"context"
+	"fmt"
+	"io/ioutil"
+	e2emetrics "k8s.io/kubernetes/test/e2e/framework/metrics"
+	"path"
+	"time"
 
 	"github.com/onsi/ginkgo"
 	v1 "k8s.io/api/core/v1"
@@ -26,6 +29,7 @@ import (
 	"k8s.io/klog"
 	aggregatorclientset "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/test/e2e/framework"
+	e2ekubectl "k8s.io/kubernetes/test/e2e/framework/kubectl"
 	e2elog "k8s.io/kubernetes/test/e2e/framework/log"
 	e2epod "k8s.io/kubernetes/test/e2e/framework/pod"
 	utilnet "k8s.io/utils/net"
@@ -33,9 +37,15 @@ import (
 	test "github.com/chaos-mesh/chaos-mesh/e2e-test"
 	e2econfig "github.com/chaos-mesh/chaos-mesh/e2e-test/e2e/config"
 
+	// load pprof
+	_ "net/http/pprof"
+	"os/exec"
+
 	// ensure auth plugins are loaded
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
+
+const NamespaceCleanupTimeout = 15 * time.Minute
 
 // This is modified from framework.SetupSuite().
 // setupSuite is the boilerplate that can be used to setup ginkgo test suites, on the SynchronizedBeforeSuite step.
@@ -68,7 +78,7 @@ func setupSuite() {
 			e2elog.Failf("Error deleting orphaned namespaces: %v", err)
 		}
 		klog.Infof("Waiting for deletion of the following namespaces: %v", deleted)
-		if err := framework.WaitForNamespacesDeleted(c, deleted, framework.NamespaceCleanupTimeout); err != nil {
+		if err := framework.WaitForNamespacesDeleted(c, deleted, NamespaceCleanupTimeout); err != nil {
 			e2elog.Failf("Failed to delete orphaned namespaces %v: %v", deleted, err)
 		}
 	}
@@ -94,7 +104,7 @@ func setupSuite() {
 	// number equal to the number of allowed not-ready nodes).
 	if err := e2epod.WaitForPodsRunningReady(c, metav1.NamespaceSystem, int32(framework.TestContext.MinStartupPods), int32(framework.TestContext.AllowedNotReadyNodes), podStartupTimeout, map[string]string{}); err != nil {
 		framework.DumpAllNamespaceInfo(c, metav1.NamespaceSystem)
-		framework.LogFailedContainers(c, metav1.NamespaceSystem, e2elog.Logf)
+		e2ekubectl.LogFailedContainers(c, metav1.NamespaceSystem, e2elog.Logf)
 		e2elog.Failf("Error waiting for all pods to be running and ready: %v", err)
 	}
 
@@ -159,10 +169,69 @@ var _ = ginkgo.SynchronizedBeforeSuite(func() []byte {
 })
 
 var _ = ginkgo.SynchronizedAfterSuite(func() {
-	framework.CleanupSuite()
+	CleanupSuite()
 }, func() {
-	framework.AfterSuiteActions()
+	AfterSuiteActions()
 })
+
+// CleanupSuite is the boilerplate that can be used after tests on ginkgo were run, on the SynchronizedAfterSuite step.
+// Similar to SynchronizedBeforeSuite, we want to run some operations only once (such as collecting cluster logs).
+// Here, the order of functions is reversed; first, the function which runs everywhere,
+// and then the function that only runs on the first Ginkgo node.
+func CleanupSuite() {
+	// Run on all Ginkgo nodes
+	framework.Logf("Running AfterSuite actions on all nodes")
+	framework.RunCleanupActions()
+}
+
+// AfterSuiteActions are actions that are run on ginkgo's SynchronizedAfterSuite
+func AfterSuiteActions() {
+	// Run only Ginkgo on node 1
+	framework.Logf("Running AfterSuite actions on node 1")
+	if framework.TestContext.ReportDir != "" {
+		framework.CoreDump(framework.TestContext.ReportDir)
+	}
+	if framework.TestContext.GatherSuiteMetricsAfterTest {
+		if err := gatherTestSuiteMetrics(); err != nil {
+			framework.Logf("Error gathering metrics: %v", err)
+		}
+	}
+	if framework.TestContext.NodeKiller.Enabled {
+		close(framework.TestContext.NodeKiller.NodeKillerStopCh)
+	}
+}
+
+func gatherTestSuiteMetrics() error {
+	framework.Logf("Gathering metrics")
+	c, err := framework.LoadClientset()
+	if err != nil {
+		return fmt.Errorf("error loading client: %v", err)
+	}
+
+	// Grab metrics for apiserver, scheduler, controller-manager, kubelet (for non-kubemark case) and cluster autoscaler (optionally).
+	grabber, err := e2emetrics.NewMetricsGrabber(c, nil, !framework.ProviderIs("kubemark"), true, true, true, framework.TestContext.IncludeClusterAutoscalerMetrics)
+	if err != nil {
+		return fmt.Errorf("failed to create MetricsGrabber: %v", err)
+	}
+
+	received, err := grabber.Grab()
+	if err != nil {
+		return fmt.Errorf("failed to grab metrics: %v", err)
+	}
+
+	metricsForE2E := (*e2emetrics.ComponentCollection)(&received)
+	metricsJSON := metricsForE2E.PrintJSON()
+	if framework.TestContext.ReportDir != "" {
+		filePath := path.Join(framework.TestContext.ReportDir, "MetricsForE2ESuite_"+time.Now().Format(time.RFC3339)+".json")
+		if err := ioutil.WriteFile(filePath, []byte(metricsJSON), 0644); err != nil {
+			return fmt.Errorf("error writing to %q: %v", filePath, err)
+		}
+	} else {
+		framework.Logf("\n\nTest Suite Metrics:\n%s\n", metricsJSON)
+	}
+
+	return nil
+}
 
 func setupSuitePerGinkgoNode() {
 	c, err := framework.LoadClientset()
@@ -180,7 +249,7 @@ func setupSuitePerGinkgoNode() {
 // but we can detect if a cluster is dual stack because pods have two addresses (one per family)
 func getDefaultClusterIPFamily(c kubernetes.Interface) string {
 	// Get the ClusterIP of the kubernetes service created in the default namespace
-	svc, err := c.CoreV1().Services(metav1.NamespaceDefault).Get("kubernetes", metav1.GetOptions{})
+	svc, err := c.CoreV1().Services(metav1.NamespaceDefault).Get(context.TODO(), "kubernetes", metav1.GetOptions{})
 	if err != nil {
 		e2elog.Failf("Failed to get kubernetes service ClusterIP: %v", err)
 	}

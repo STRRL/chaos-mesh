@@ -82,11 +82,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	signalHandler := ctrl.SetupSignalHandler()
+	controllerRuntimeSignalHandler := ctrl.SetupSignalHandler()
 	app := fx.New(
 		fx.Provide(
 			func() (context.Context, *config.ChaosDashboardConfig, *ttlcontroller.TTLconfig) {
-				return signalHandler, dashboardConfig, persistTTLConfigParsed
+				return controllerRuntimeSignalHandler, dashboardConfig, persistTTLConfigParsed
 			},
 			dbstore.NewDBStore,
 			collector.NewServer,

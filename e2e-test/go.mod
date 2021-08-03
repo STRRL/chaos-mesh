@@ -21,7 +21,10 @@ require (
 replace (
 	github.com/chaos-mesh/chaos-mesh => ../
 	github.com/chaos-mesh/chaos-mesh/api/v1alpha1 => ../api/v1alpha1
-	google.golang.org/grpc => google.golang.org/grpc v1.26.0
+	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
+	github.com/onsi/ginkgo => github.com/onsi/ginkgo v1.11.0
+	github.com/onsi/gomega => github.com/onsi/gomega v1.7.0
+	google.golang.org/grpc => google.golang.org/grpc v1.27.1
 	k8s.io/api => k8s.io/api v0.21.3
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.21.3
 	k8s.io/apimachinery => k8s.io/apimachinery v0.21.3
