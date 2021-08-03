@@ -189,6 +189,11 @@ func (in *WorkflowList) ListChaos() []*ChaosInstance {
 	return res
 }
 
+// FIXME: refactor: use the correct abstraction of ChaosList and ChaosKind for Schedule
+func (in *WorkflowList) DeepCopyList() ChaosList {
+	return in.DeepCopy()
+}
+
 func init() {
 	SchemeBuilder.Register(&Workflow{}, &WorkflowList{})
 }

@@ -41,8 +41,7 @@ type Reconciler struct {
 	Recorder recorder.ChaosRecorder
 }
 
-func (r *Reconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	ctx := context.Background()
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
 	schedule := &v1alpha1.Schedule{}
 	err := r.Get(ctx, req.NamespacedName, schedule)
@@ -76,8 +75,8 @@ func (r *Reconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		item := items.Index(i).Addr().Interface().(v1alpha1.InnerObject)
 		if item.IsPaused() != schedule.IsPaused() {
 			key := k8sTypes.NamespacedName{
-				Namespace: item.GetObjectMeta().GetNamespace(),
-				Name:      item.GetObjectMeta().GetName(),
+				Namespace: item.GetNamespace(),
+				Name:      item.GetName(),
 			}
 			pause := strconv.FormatBool(schedule.IsPaused())
 
@@ -88,10 +87,12 @@ func (r *Reconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 					r.Log.Error(err, "unable to get schedule")
 					return err
 				}
-				if item.GetObjectMeta().Annotations == nil {
-					item.GetObjectMeta().Annotations = make(map[string]string)
+				annotations := item.GetAnnotations()
+				if annotations == nil {
+					annotations = make(map[string]string)
 				}
-				item.GetObjectMeta().Annotations[v1alpha1.PauseAnnotationKey] = pause
+				annotations[v1alpha1.PauseAnnotationKey] = pause
+				item.SetAnnotations(annotations)
 
 				return r.Client.Update(ctx, item)
 			})

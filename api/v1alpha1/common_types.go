@@ -102,16 +102,16 @@ type InnerObject interface {
 
 // StatefulObject defines a basic Object that can get the status
 type StatefulObject interface {
+	metav1.Object
 	runtime.Object
 	GetStatus() *ChaosStatus
-	GetObjectMeta() *metav1.ObjectMeta
 }
 
 // +kubebuilder:object:generate=false
 // MetaObject defines a very basic Object that can get meta
 type MetaObject interface {
+	metav1.Object
 	runtime.Object
-	GetObjectMeta() *metav1.ObjectMeta
 }
 
 // +kubebuilder:object:generate=false
@@ -134,5 +134,7 @@ type ChaosInstance struct {
 // ChaosList defines a common interface for chaos lists
 type ChaosList interface {
 	runtime.Object
+	metav1.ListInterface
+	DeepCopyList() ChaosList
 	ListChaos() []*ChaosInstance
 }

@@ -50,7 +50,7 @@ type Reconciler struct {
 }
 
 // Reconcile the common chaos
-func (r *Reconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	obj := r.Object.DeepCopyObject().(v1alpha1.InnerObject)
 
 	if err := r.Client.Get(context.TODO(), req.NamespacedName, obj); err != nil {
@@ -63,7 +63,7 @@ func (r *Reconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return ctrl.Result{}, nil
 	}
 
-	finalizers := obj.GetObjectMeta().Finalizers
+	finalizers := obj.GetFinalizers()
 	records := obj.GetStatus().Experiment.Records
 	shouldUpdate := false
 	if obj.IsDeleted() {
@@ -74,7 +74,8 @@ func (r *Reconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 			}
 		}
 
-		if obj.GetObjectMeta().Annotations[AnnotationCleanFinalizer] == AnnotationCleanFinalizerForced || (resumed && len(finalizers) != 0) {
+		annotations := obj.GetAnnotations()
+		if annotations[AnnotationCleanFinalizer] == AnnotationCleanFinalizerForced || (resumed && len(finalizers) != 0) {
 			r.Recorder.Event(obj, recorder.FinalizerRemoved{})
 			finalizers = []string{}
 			shouldUpdate = true
@@ -83,21 +84,20 @@ func (r *Reconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		if !ContainsFinalizer(obj.(metav1.Object), RecordFinalizer) {
 			r.Recorder.Event(obj, recorder.FinalizerInited{})
 			shouldUpdate = true
-			finalizers = append(obj.GetObjectMeta().Finalizers, RecordFinalizer)
+			finalizers = append(obj.GetFinalizers(), RecordFinalizer)
 		}
 	}
 
 	if shouldUpdate {
 		updateError := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			obj := r.Object.DeepCopyObject().(v1alpha1.InnerObject)
+			updatedObj := r.Object.DeepCopyObject().(v1alpha1.InnerObject)
 
-			if err := r.Client.Get(context.TODO(), req.NamespacedName, obj); err != nil {
+			if err := r.Client.Get(context.TODO(), req.NamespacedName, updatedObj); err != nil {
 				r.Log.Error(err, "unable to get chaos")
 				return err
 			}
-
-			obj.GetObjectMeta().Finalizers = finalizers
-			return r.Client.Update(context.TODO(), obj)
+			updatedObj.SetFinalizers(finalizers)
+			return r.Client.Update(context.TODO(), updatedObj)
 		})
 		if updateError != nil {
 			// TODO: handle this error

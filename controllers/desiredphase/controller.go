@@ -41,7 +41,7 @@ type Reconciler struct {
 }
 
 // Reconcile the common chaos
-func (r *Reconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
+func (r *Reconciler) Reconcile(_ context.Context, req ctrl.Request) (ctrl.Result, error) {
 	obj := r.Object.DeepCopyObject().(v1alpha1.InnerObject)
 
 	if err := r.Client.Get(context.TODO(), req.NamespacedName, obj); err != nil {
@@ -71,7 +71,7 @@ type reconcileContext struct {
 }
 
 func (ctx *reconcileContext) GetCreationTimestamp() metav1.Time {
-	return ctx.obj.GetObjectMeta().CreationTimestamp
+	return ctx.obj.GetCreationTimestamp()
 }
 
 func (ctx *reconcileContext) CalcDesiredPhase() (v1alpha1.DesiredPhase, []recorder.ChaosEvent) {
@@ -140,7 +140,7 @@ func (ctx *reconcileContext) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 
 			if obj.GetStatus().Experiment.DesiredPhase != desiredPhase {
 				obj.GetStatus().Experiment.DesiredPhase = desiredPhase
-				ctx.Log.Info("update object", "namespace", obj.GetObjectMeta().GetNamespace(), "name", obj.GetObjectMeta().GetName())
+				ctx.Log.Info("update object", "namespace", obj.GetNamespace(), "name", obj.GetName())
 				return ctx.Client.Update(context.TODO(), obj)
 			}
 

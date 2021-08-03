@@ -14,6 +14,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
@@ -81,11 +82,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctrlRuntimeStopCh := ctrl.SetupSignalHandler()
+	signalHandler := ctrl.SetupSignalHandler()
 	app := fx.New(
 		fx.Provide(
-			func() (<-chan struct{}, *config.ChaosDashboardConfig, *ttlcontroller.TTLconfig) {
-				return ctrlRuntimeStopCh, dashboardConfig, persistTTLConfigParsed
+			func() (context.Context, *config.ChaosDashboardConfig, *ttlcontroller.TTLconfig) {
+				return signalHandler, dashboardConfig, persistTTLConfigParsed
 			},
 			dbstore.NewDBStore,
 			collector.NewServer,

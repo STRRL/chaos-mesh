@@ -115,6 +115,10 @@ func (in *AWSChaosList) ListChaos() []*ChaosInstance {
 	return res
 }
 
+func (in *AWSChaosList) DeepCopyList() ChaosList {
+	return in.DeepCopy()
+}
+
 func (in *AWSChaos) DurationExceeded(now time.Time) (bool, time.Duration, error) {
 	duration, err := in.Spec.GetDuration()
 	if err != nil {
@@ -237,6 +241,10 @@ func (in *DNSChaosList) ListChaos() []*ChaosInstance {
 	return res
 }
 
+func (in *DNSChaosList) DeepCopyList() ChaosList {
+	return in.DeepCopy()
+}
+
 func (in *DNSChaos) DurationExceeded(now time.Time) (bool, time.Duration, error) {
 	duration, err := in.Spec.GetDuration()
 	if err != nil {
@@ -353,6 +361,10 @@ func (in *GCPChaosList) ListChaos() []*ChaosInstance {
 		res = append(res, item.GetChaos())
 	}
 	return res
+}
+
+func (in *GCPChaosList) DeepCopyList() ChaosList {
+	return in.DeepCopy()
 }
 
 func (in *GCPChaos) DurationExceeded(now time.Time) (bool, time.Duration, error) {
@@ -477,6 +489,10 @@ func (in *HTTPChaosList) ListChaos() []*ChaosInstance {
 	return res
 }
 
+func (in *HTTPChaosList) DeepCopyList() ChaosList {
+	return in.DeepCopy()
+}
+
 func (in *HTTPChaos) DurationExceeded(now time.Time) (bool, time.Duration, error) {
 	duration, err := in.Spec.GetDuration()
 	if err != nil {
@@ -593,6 +609,10 @@ func (in *IOChaosList) ListChaos() []*ChaosInstance {
 		res = append(res, item.GetChaos())
 	}
 	return res
+}
+
+func (in *IOChaosList) DeepCopyList() ChaosList {
+	return in.DeepCopy()
 }
 
 func (in *IOChaos) DurationExceeded(now time.Time) (bool, time.Duration, error) {
@@ -713,6 +733,10 @@ func (in *JVMChaosList) ListChaos() []*ChaosInstance {
 	return res
 }
 
+func (in *JVMChaosList) DeepCopyList() ChaosList {
+	return in.DeepCopy()
+}
+
 func (in *JVMChaos) DurationExceeded(now time.Time) (bool, time.Duration, error) {
 	duration, err := in.Spec.GetDuration()
 	if err != nil {
@@ -829,6 +853,10 @@ func (in *KernelChaosList) ListChaos() []*ChaosInstance {
 		res = append(res, item.GetChaos())
 	}
 	return res
+}
+
+func (in *KernelChaosList) DeepCopyList() ChaosList {
+	return in.DeepCopy()
 }
 
 func (in *KernelChaos) DurationExceeded(now time.Time) (bool, time.Duration, error) {
@@ -949,6 +977,10 @@ func (in *NetworkChaosList) ListChaos() []*ChaosInstance {
 	return res
 }
 
+func (in *NetworkChaosList) DeepCopyList() ChaosList {
+	return in.DeepCopy()
+}
+
 func (in *NetworkChaos) DurationExceeded(now time.Time) (bool, time.Duration, error) {
 	duration, err := in.Spec.GetDuration()
 	if err != nil {
@@ -1065,6 +1097,10 @@ func (in *PodChaosList) ListChaos() []*ChaosInstance {
 		res = append(res, item.GetChaos())
 	}
 	return res
+}
+
+func (in *PodChaosList) DeepCopyList() ChaosList {
+	return in.DeepCopy()
 }
 
 func (in *PodChaos) DurationExceeded(now time.Time) (bool, time.Duration, error) {
@@ -1189,6 +1225,10 @@ func (in *StressChaosList) ListChaos() []*ChaosInstance {
 	return res
 }
 
+func (in *StressChaosList) DeepCopyList() ChaosList {
+	return in.DeepCopy()
+}
+
 func (in *StressChaos) DurationExceeded(now time.Time) (bool, time.Duration, error) {
 	duration, err := in.Spec.GetDuration()
 	if err != nil {
@@ -1305,6 +1345,10 @@ func (in *TimeChaosList) ListChaos() []*ChaosInstance {
 		res = append(res, item.GetChaos())
 	}
 	return res
+}
+
+func (in *TimeChaosList) DeepCopyList() ChaosList {
+	return in.DeepCopy()
 }
 
 func (in *TimeChaos) DurationExceeded(now time.Time) (bool, time.Duration, error) {

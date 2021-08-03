@@ -123,6 +123,10 @@ func (in *{{.Type}}List) ListChaos() []*ChaosInstance {
 	return res
 }
 
+func (in *{{.Type}}List) DeepCopyList() ChaosList {
+	return in.DeepCopy()
+}
+
 func (in *{{.Type}}) DurationExceeded(now time.Time) (bool, time.Duration, error) {
 	duration, err := in.Spec.GetDuration()
 	if err != nil {
