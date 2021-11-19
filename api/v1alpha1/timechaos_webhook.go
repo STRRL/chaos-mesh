@@ -42,6 +42,12 @@ func (in *TimeOffset) Validate(root interface{}, path *field.Path) field.ErrorLi
 	if timeChaos, ok := root.(TimeChaos); ok && timeChaos.Spec.Action == TimeSkewAction {
 		allErrs := field.ErrorList{}
 
+		if *in == "" {
+			return field.ErrorList{
+				field.Invalid(path, in, fmt.Sprintf("TimeOffset is required with Action %s", TimeSkewAction)),
+			}
+		}
+
 		_, err := time.ParseDuration(string(*in))
 		if err != nil {
 			allErrs = append(allErrs, field.Invalid(path,
@@ -69,7 +75,7 @@ func (in *TimeStopAt) Validate(root interface{}, path *field.Path) field.ErrorLi
 
 		if *in == "" {
 			return field.ErrorList{
-				field.Invalid(path, in, fmt.Sprintf("TimeStopAt is required")),
+				field.Invalid(path, in, fmt.Sprintf("TimeStopAt is required with Action %s", TimeStopAction)),
 			}
 		}
 		_, err := time.Parse(time.RFC3339, string(*in))
