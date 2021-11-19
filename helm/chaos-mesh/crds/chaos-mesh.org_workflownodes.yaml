@@ -4106,6 +4106,14 @@ spec:
                   timeChaos:
                     description: TimeChaosSpec defines the desired state of TimeChaos
                     properties:
+                      action:
+                        description: 'Action defines the specific time chaos action.
+                          Supported action: time-skew / time-stop Default action:
+                          time-skew'
+                        enum:
+                        - time-skew
+                        - time-stop
+                        type: string
                       clockIds:
                         description: ClockIds defines all affected clock id All available
                           options are ["CLOCK_REALTIME","CLOCK_MONOTONIC","CLOCK_PROCESS_CPUTIME_ID","CLOCK_THREAD_CPUTIME_ID",
@@ -4232,6 +4240,10 @@ spec:
                           such as "300ms", "-1.5h" or "2h45m". Valid time units are
                           "ns", "us" (or "µs"), "ms", "s", "m", "h".
                         type: string
+                      timeStopAt:
+                        description: TimeStopAt defines that a constant timestamp
+                          that the time of injected program would always be "frozen".
+                        type: string
                       value:
                         description: Value is required when the mode is set to `FixedMode`
                           / `FixedPercentMode` / `RandomMaxPercentMode`. If `FixedMode`,
@@ -4242,9 +4254,11 @@ spec:
                           do chaos action
                         type: string
                     required:
+                    - action
                     - mode
                     - selector
                     - timeOffset
+                    - timeStopAt
                     type: object
                   type:
                     description: 'TODO: use a custom type, as `TemplateType` contains
@@ -8739,6 +8753,14 @@ spec:
                                   description: TimeChaosSpec defines the desired state
                                     of TimeChaos
                                   properties:
+                                    action:
+                                      description: 'Action defines the specific time
+                                        chaos action. Supported action: time-skew
+                                        / time-stop Default action: time-skew'
+                                      enum:
+                                      - time-skew
+                                      - time-stop
+                                      type: string
                                     clockIds:
                                       description: ClockIds defines all affected clock
                                         id All available options are ["CLOCK_REALTIME","CLOCK_MONOTONIC","CLOCK_PROCESS_CPUTIME_ID","CLOCK_THREAD_CPUTIME_ID",
@@ -8880,6 +8902,11 @@ spec:
                                         "-1.5h" or "2h45m". Valid time units are "ns",
                                         "us" (or "µs"), "ms", "s", "m", "h".
                                       type: string
+                                    timeStopAt:
+                                      description: TimeStopAt defines that a constant
+                                        timestamp that the time of injected program
+                                        would always be "frozen".
+                                      type: string
                                     value:
                                       description: Value is required when the mode
                                         is set to `FixedMode` / `FixedPercentMode`
@@ -8892,9 +8919,11 @@ spec:
                                         of pods to do chaos action
                                       type: string
                                   required:
+                                  - action
                                   - mode
                                   - selector
                                   - timeOffset
+                                  - timeStopAt
                                   type: object
                                 type:
                                   description: 'TODO: use a custom type, as `TemplateType`
@@ -12213,6 +12242,14 @@ spec:
                               description: TimeChaosSpec defines the desired state
                                 of TimeChaos
                               properties:
+                                action:
+                                  description: 'Action defines the specific time chaos
+                                    action. Supported action: time-skew / time-stop
+                                    Default action: time-skew'
+                                  enum:
+                                  - time-skew
+                                  - time-stop
+                                  type: string
                                 clockIds:
                                   description: ClockIds defines all affected clock
                                     id All available options are ["CLOCK_REALTIME","CLOCK_MONOTONIC","CLOCK_PROCESS_CPUTIME_ID","CLOCK_THREAD_CPUTIME_ID",
@@ -12350,6 +12387,11 @@ spec:
                                     "2h45m". Valid time units are "ns", "us" (or "µs"),
                                     "ms", "s", "m", "h".
                                   type: string
+                                timeStopAt:
+                                  description: TimeStopAt defines that a constant
+                                    timestamp that the time of injected program would
+                                    always be "frozen".
+                                  type: string
                                 value:
                                   description: Value is required when the mode is
                                     set to `FixedMode` / `FixedPercentMode` / `RandomMaxPercentMode`.
@@ -12361,9 +12403,11 @@ spec:
                                     of pods to do chaos action
                                   type: string
                               required:
+                              - action
                               - mode
                               - selector
                               - timeOffset
+                              - timeStopAt
                               type: object
                           required:
                           - name
@@ -15205,6 +15249,13 @@ spec:
               timeChaos:
                 description: TimeChaosSpec defines the desired state of TimeChaos
                 properties:
+                  action:
+                    description: 'Action defines the specific time chaos action. Supported
+                      action: time-skew / time-stop Default action: time-skew'
+                    enum:
+                    - time-skew
+                    - time-stop
+                    type: string
                   clockIds:
                     description: ClockIds defines all affected clock id All available
                       options are ["CLOCK_REALTIME","CLOCK_MONOTONIC","CLOCK_PROCESS_CPUTIME_ID","CLOCK_THREAD_CPUTIME_ID",
@@ -15328,6 +15379,10 @@ spec:
                       "300ms", "-1.5h" or "2h45m". Valid time units are "ns", "us"
                       (or "µs"), "ms", "s", "m", "h".
                     type: string
+                  timeStopAt:
+                    description: TimeStopAt defines that a constant timestamp that
+                      the time of injected program would always be "frozen".
+                    type: string
                   value:
                     description: Value is required when the mode is set to `FixedMode`
                       / `FixedPercentMode` / `RandomMaxPercentMode`. If `FixedMode`,
@@ -15338,9 +15393,11 @@ spec:
                       chaos action
                     type: string
                 required:
+                - action
                 - mode
                 - selector
                 - timeOffset
+                - timeStopAt
                 type: object
               type:
                 type: string

@@ -4045,6 +4045,10 @@ var doc = `{
         "v1alpha1.TimeChaosSpec": {
             "type": "object",
             "properties": {
+                "action": {
+                    "description": "Action defines the specific time chaos action.\nSupported action: time-skew / time-stop\nDefault action: time-skew\n+kubebuilder:validation:Enum=time-skew;time-stop",
+                    "type": "string"
+                },
                 "clockIds": {
                     "description": "ClockIds defines all affected clock id\nAll available options are [\"CLOCK_REALTIME\",\"CLOCK_MONOTONIC\",\"CLOCK_PROCESS_CPUTIME_ID\",\"CLOCK_THREAD_CPUTIME_ID\",\n\"CLOCK_MONOTONIC_RAW\",\"CLOCK_REALTIME_COARSE\",\"CLOCK_MONOTONIC_COARSE\",\"CLOCK_BOOTTIME\",\"CLOCK_REALTIME_ALARM\",\n\"CLOCK_BOOTTIME_ALARM\"]\nDefault value is [\"CLOCK_REALTIME\"]",
                     "type": "array",
@@ -4074,6 +4078,10 @@ var doc = `{
                 },
                 "timeOffset": {
                     "description": "TimeOffset defines the delta time of injected program. It's a possibly signed sequence of decimal numbers, such as\n\"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\".",
+                    "type": "string"
+                },
+                "timeStopAt": {
+                    "description": "TimeStopAt defines that a constant timestamp that the time of injected program would always be \"frozen\".",
                     "type": "string"
                 },
                 "value": {

@@ -38,13 +38,29 @@ type TimeChaos struct {
 var _ InnerObjectWithSelector = (*TimeChaos)(nil)
 var _ InnerObject = (*TimeChaos)(nil)
 
+type TimeChaosAction string
+
+const (
+	TimeSkewAction TimeChaosAction = "time-skew"
+	TimeStopAction TimeChaosAction = "time-stop"
+)
+
 // TimeChaosSpec defines the desired state of TimeChaos
 type TimeChaosSpec struct {
 	ContainerSelector `json:",inline"`
 
+	// Action defines the specific time chaos action.
+	// Supported action: time-skew / time-stop
+	// Default action: time-skew
+	// +kubebuilder:validation:Enum=time-skew;time-stop
+	Action TimeChaosAction `json:"action"`
+
 	// TimeOffset defines the delta time of injected program. It's a possibly signed sequence of decimal numbers, such as
 	// "300ms", "-1.5h" or "2h45m". Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
 	TimeOffset string `json:"timeOffset" webhook:"TimeOffset"`
+
+	// TimeStopAt defines that a constant timestamp that the time of injected program would always be "frozen".
+	TimeStopAt string `json:"timeStopAt"`
 
 	// ClockIds defines all affected clock id
 	// All available options are ["CLOCK_REALTIME","CLOCK_MONOTONIC","CLOCK_PROCESS_CPUTIME_ID","CLOCK_THREAD_CPUTIME_ID",

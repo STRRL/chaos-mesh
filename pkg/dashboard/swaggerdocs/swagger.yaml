@@ -2027,6 +2027,13 @@ definitions:
     type: object
   v1alpha1.TimeChaosSpec:
     properties:
+      action:
+        description: |-
+          Action defines the specific time chaos action.
+          Supported action: time-skew / time-stop
+          Default action: time-skew
+          +kubebuilder:validation:Enum=time-skew;time-stop
+        type: string
       clockIds:
         description: |-
           ClockIds defines all affected clock id
@@ -2063,6 +2070,10 @@ definitions:
         description: |-
           TimeOffset defines the delta time of injected program. It's a possibly signed sequence of decimal numbers, such as
           "300ms", "-1.5h" or "2h45m". Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+        type: string
+      timeStopAt:
+        description: TimeStopAt defines that a constant timestamp that the time of
+          injected program would always be "frozen".
         type: string
       value:
         description: |-
