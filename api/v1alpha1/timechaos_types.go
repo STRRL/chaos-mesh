@@ -60,7 +60,7 @@ type TimeChaosSpec struct {
 	TimeOffset string `json:"timeOffset" webhook:"TimeOffset"`
 
 	// TimeStopAt defines that a constant timestamp that the time of injected program would always be "frozen".
-	TimeStopAt string `json:"timeStopAt"`
+	TimeStopAt string `json:"timeStopAt" webhook:"TimeStopAt"`
 
 	// ClockIds defines all affected clock id
 	// All available options are ["CLOCK_REALTIME","CLOCK_MONOTONIC","CLOCK_PROCESS_CPUTIME_ID","CLOCK_THREAD_CPUTIME_ID",

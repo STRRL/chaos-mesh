@@ -50,7 +50,33 @@ func (in *TimeOffset) Validate(root interface{}, path *field.Path) field.ErrorLi
 	return allErrs
 }
 
+type TimeStopAt string
+
+func (in *TimeStopAt) Default(root interface{}, field *reflect.StructField) {
+	if *in == "" {
+		// Default TimeStopAt is current time
+		*in = TimeStopAt(time.Now().Format(time.RFC3339))
+	}
+}
+
+func (in *TimeStopAt) Validate(root interface{}, path *field.Path) field.ErrorList {
+	if *in == "" {
+		return field.ErrorList{
+			field.Invalid(path, in, fmt.Sprintf("TimeStopAt is required")),
+		}
+	}
+	_, err := time.Parse(time.RFC3339, string(*in))
+	if err != nil {
+		return field.ErrorList{
+			field.Invalid(path, in, fmt.Sprintf("TimeStopAt should be a valid RFC3339 Timestamp, example: %s, err: %s", time.RFC3339, err.Error())),
+		}
+	}
+
+	return nil
+}
+
 func init() {
 	genericwebhook.Register("ClockIds", reflect.PtrTo(reflect.TypeOf(ClockIds{})))
 	genericwebhook.Register("TimeOffset", reflect.PtrTo(reflect.TypeOf(TimeOffset(""))))
+	genericwebhook.Register("TimeStopAt", reflect.PtrTo(reflect.TypeOf(TimeStopAt(""))))
 }
