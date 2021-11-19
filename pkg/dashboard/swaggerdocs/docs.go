@@ -4077,11 +4077,11 @@ var doc = `{
                     "$ref": "#/definitions/v1alpha1.PodSelectorSpec"
                 },
                 "timeOffset": {
-                    "description": "TimeOffset defines the delta time of injected program. It's a possibly signed sequence of decimal numbers, such as\n\"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\".",
+                    "description": "TimeOffset defines the delta time of injected program. It's a possibly signed sequence of decimal numbers, such as\n\"300ms\", \"-1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\".\n+optional",
                     "type": "string"
                 },
                 "timeStopAt": {
-                    "description": "TimeStopAt defines that a constant timestamp that the time of injected program would always be \"frozen\".",
+                    "description": "TimeStopAt defines that a constant timestamp that the time of injected program would always be \"frozen\".\n+optional",
                     "type": "string"
                 },
                 "value": {

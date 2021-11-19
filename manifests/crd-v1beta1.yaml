@@ -5750,8 +5750,6 @@ spec:
               - action
               - mode
               - selector
-              - timeOffset
-              - timeStopAt
               type: object
             type:
               description: 'TODO: use a custom type, as `TemplateType` contains other
@@ -10204,8 +10202,6 @@ spec:
                             - action
                             - mode
                             - selector
-                            - timeOffset
-                            - timeStopAt
                             type: object
                           type:
                             description: 'TODO: use a custom type, as `TemplateType`
@@ -13439,8 +13435,6 @@ spec:
                         - action
                         - mode
                         - selector
-                        - timeOffset
-                        - timeStopAt
                         type: object
                     required:
                     - name
@@ -14007,8 +14001,6 @@ spec:
           - action
           - mode
           - selector
-          - timeOffset
-          - timeStopAt
           type: object
         status:
           description: Most recently observed status of the time chaos experiment
@@ -18296,8 +18288,6 @@ spec:
                   - action
                   - mode
                   - selector
-                  - timeOffset
-                  - timeStopAt
                   type: object
                 type:
                   description: 'TODO: use a custom type, as `TemplateType` contains
@@ -22871,8 +22861,6 @@ spec:
                                 - action
                                 - mode
                                 - selector
-                                - timeOffset
-                                - timeStopAt
                                 type: object
                               type:
                                 description: 'TODO: use a custom type, as `TemplateType`
@@ -26258,8 +26246,6 @@ spec:
                             - action
                             - mode
                             - selector
-                            - timeOffset
-                            - timeStopAt
                             type: object
                         required:
                         - name
@@ -29201,8 +29187,6 @@ spec:
               - action
               - mode
               - selector
-              - timeOffset
-              - timeStopAt
               type: object
             type:
               type: string
@@ -33690,8 +33674,6 @@ spec:
                         - action
                         - mode
                         - selector
-                        - timeOffset
-                        - timeStopAt
                         type: object
                       type:
                         description: 'TODO: use a custom type, as `TemplateType` contains
@@ -36781,8 +36763,6 @@ spec:
                     - action
                     - mode
                     - selector
-                    - timeOffset
-                    - timeStopAt
                     type: object
                 required:
                 - name

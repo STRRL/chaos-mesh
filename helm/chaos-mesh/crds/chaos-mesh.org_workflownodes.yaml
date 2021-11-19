@@ -4257,8 +4257,6 @@ spec:
                     - action
                     - mode
                     - selector
-                    - timeOffset
-                    - timeStopAt
                     type: object
                   type:
                     description: 'TODO: use a custom type, as `TemplateType` contains
@@ -8922,8 +8920,6 @@ spec:
                                   - action
                                   - mode
                                   - selector
-                                  - timeOffset
-                                  - timeStopAt
                                   type: object
                                 type:
                                   description: 'TODO: use a custom type, as `TemplateType`
@@ -12406,8 +12402,6 @@ spec:
                               - action
                               - mode
                               - selector
-                              - timeOffset
-                              - timeStopAt
                               type: object
                           required:
                           - name
@@ -15396,8 +15390,6 @@ spec:
                 - action
                 - mode
                 - selector
-                - timeOffset
-                - timeStopAt
                 type: object
               type:
                 type: string

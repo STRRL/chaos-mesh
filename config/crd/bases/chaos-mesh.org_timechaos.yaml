@@ -182,8 +182,6 @@ spec:
             - action
             - mode
             - selector
-            - timeOffset
-            - timeStopAt
             type: object
           status:
             description: Most recently observed status of the time chaos experiment

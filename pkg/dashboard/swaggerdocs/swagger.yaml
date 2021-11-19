@@ -2070,10 +2070,12 @@ definitions:
         description: |-
           TimeOffset defines the delta time of injected program. It's a possibly signed sequence of decimal numbers, such as
           "300ms", "-1.5h" or "2h45m". Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+          +optional
         type: string
       timeStopAt:
-        description: TimeStopAt defines that a constant timestamp that the time of
-          injected program would always be "frozen".
+        description: |-
+          TimeStopAt defines that a constant timestamp that the time of injected program would always be "frozen".
+          +optional
         type: string
       value:
         description: |-

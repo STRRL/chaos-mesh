@@ -38,16 +38,20 @@ func (in *ClockIds) Default(root interface{}, field *reflect.StructField) {
 type TimeOffset string
 
 func (in *TimeOffset) Validate(root interface{}, path *field.Path) field.ErrorList {
-	allErrs := field.ErrorList{}
 
-	_, err := time.ParseDuration(string(*in))
-	if err != nil {
-		allErrs = append(allErrs, field.Invalid(path,
-			in,
-			fmt.Sprintf("parse timeOffset field error:%s", err)))
+	if timeChaos, ok := root.(TimeChaos); ok && timeChaos.Spec.Action == TimeSkewAction {
+		allErrs := field.ErrorList{}
+
+		_, err := time.ParseDuration(string(*in))
+		if err != nil {
+			allErrs = append(allErrs, field.Invalid(path,
+				in,
+				fmt.Sprintf("parse timeOffset field error:%s", err)))
+		}
+		return allErrs
 	}
 
-	return allErrs
+	return nil
 }
 
 type TimeStopAt string
@@ -60,15 +64,19 @@ func (in *TimeStopAt) Default(root interface{}, field *reflect.StructField) {
 }
 
 func (in *TimeStopAt) Validate(root interface{}, path *field.Path) field.ErrorList {
-	if *in == "" {
-		return field.ErrorList{
-			field.Invalid(path, in, fmt.Sprintf("TimeStopAt is required")),
+
+	if timeChaos, ok := root.(TimeChaos); ok && timeChaos.Spec.Action == TimeStopAction {
+
+		if *in == "" {
+			return field.ErrorList{
+				field.Invalid(path, in, fmt.Sprintf("TimeStopAt is required")),
+			}
 		}
-	}
-	_, err := time.Parse(time.RFC3339, string(*in))
-	if err != nil {
-		return field.ErrorList{
-			field.Invalid(path, in, fmt.Sprintf("TimeStopAt should be a valid RFC3339 Timestamp, example: %s, err: %s", time.RFC3339, err.Error())),
+		_, err := time.Parse(time.RFC3339, string(*in))
+		if err != nil {
+			return field.ErrorList{
+				field.Invalid(path, in, fmt.Sprintf("TimeStopAt should be a valid RFC3339 Timestamp, example: %s, err: %s", time.RFC3339, err.Error())),
+			}
 		}
 	}
 

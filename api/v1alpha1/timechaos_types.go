@@ -57,10 +57,12 @@ type TimeChaosSpec struct {
 
 	// TimeOffset defines the delta time of injected program. It's a possibly signed sequence of decimal numbers, such as
 	// "300ms", "-1.5h" or "2h45m". Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
-	TimeOffset string `json:"timeOffset" webhook:"TimeOffset"`
+	// +optional
+	TimeOffset string `json:"timeOffset,omitempty" webhook:"TimeOffset"`
 
 	// TimeStopAt defines that a constant timestamp that the time of injected program would always be "frozen".
-	TimeStopAt string `json:"timeStopAt" webhook:"TimeStopAt"`
+	// +optional
+	TimeStopAt string `json:"timeStopAt,omitempty" webhook:"TimeStopAt"`
 
 	// ClockIds defines all affected clock id
 	// All available options are ["CLOCK_REALTIME","CLOCK_MONOTONIC","CLOCK_PROCESS_CPUTIME_ID","CLOCK_THREAD_CPUTIME_ID",
