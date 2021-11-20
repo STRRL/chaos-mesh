@@ -16,108 +16,28 @@
 package timechaos
 
 import (
-	"context"
-	"time"
-
-	"github.com/go-logr/logr"
 	"go.uber.org/fx"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/chaos-mesh/chaos-mesh/api/v1alpha1"
-	"github.com/chaos-mesh/chaos-mesh/controllers/chaosimpl/utils"
+	"github.com/chaos-mesh/chaos-mesh/controllers/action"
+	"github.com/chaos-mesh/chaos-mesh/controllers/chaosimpl/timechaos/timeskew"
+	"github.com/chaos-mesh/chaos-mesh/controllers/chaosimpl/timechaos/timestop"
 	"github.com/chaos-mesh/chaos-mesh/controllers/common"
-	"github.com/chaos-mesh/chaos-mesh/pkg/chaosdaemon/pb"
-	timeUtils "github.com/chaos-mesh/chaos-mesh/pkg/time/utils"
 )
 
 type Impl struct {
-	client.Client
-	Log     logr.Logger
-	decoder *utils.ContainerRecordDecoder
+	fx.In
+
+	TimeSkew *timeskew.Impl `action:"time-skew"`
+	TimeStop *timestop.Impl `action:"time-stop"`
 }
 
-var _ common.ChaosImpl = (*Impl)(nil)
-
-func (impl *Impl) Apply(ctx context.Context, index int, records []*v1alpha1.Record, obj v1alpha1.InnerObject) (v1alpha1.Phase, error) {
-	decodedContainer, err := impl.decoder.DecodeContainerRecord(ctx, records[index])
-	pbClient := decodedContainer.PbClient
-	containerId := decodedContainer.ContainerId
-	if pbClient != nil {
-		defer pbClient.Close()
-	}
-	if err != nil {
-		return v1alpha1.NotInjected, err
-	}
-
-	timechaos := obj.(*v1alpha1.TimeChaos)
-	mask, err := timeUtils.EncodeClkIds(timechaos.Spec.ClockIds)
-	if err != nil {
-		return v1alpha1.NotInjected, err
-	}
-
-	duration, err := time.ParseDuration(timechaos.Spec.TimeOffset)
-	if err != nil {
-		return v1alpha1.NotInjected, err
-	}
-
-	sec, nsec := secAndNSecFromDuration(duration)
-
-	impl.Log.Info("setting time shift", "mask", mask, "sec", sec, "nsec", nsec, "containerId", containerId)
-	_, err = pbClient.SetTimeOffset(ctx, &pb.TimeRequest{
-		ContainerId: containerId,
-		Sec:         sec,
-		Nsec:        nsec,
-		ClkIdsMask:  mask,
-	})
-	if err != nil {
-		return v1alpha1.NotInjected, err
-	}
-
-	return v1alpha1.Injected, nil
-}
-
-func (impl *Impl) Recover(ctx context.Context, index int, records []*v1alpha1.Record, obj v1alpha1.InnerObject) (v1alpha1.Phase, error) {
-	decodedContainer, err := impl.decoder.DecodeContainerRecord(ctx, records[index])
-	pbClient := decodedContainer.PbClient
-	containerId := decodedContainer.ContainerId
-	if pbClient != nil {
-		defer pbClient.Close()
-	}
-	if err != nil {
-		if utils.IsFailToGet(err) {
-			// pretend the disappeared container has been recovered
-			return v1alpha1.NotInjected, nil
-		}
-		return v1alpha1.Injected, err
-	}
-
-	impl.Log.Info("recover for container", "containerId", containerId)
-	_, err = pbClient.RecoverTimeOffset(ctx, &pb.TimeRequest{
-		ContainerId: containerId,
-	})
-	if err != nil {
-		return v1alpha1.Injected, err
-	}
-
-	return v1alpha1.NotInjected, nil
-}
-
-func secAndNSecFromDuration(duration time.Duration) (sec int64, nsec int64) {
-	sec = duration.Nanoseconds() / 1e9
-	nsec = duration.Nanoseconds() - (sec * 1e9)
-
-	return
-}
-
-func NewImpl(c client.Client, log logr.Logger, decoder *utils.ContainerRecordDecoder) *common.ChaosImplPair {
+func NewImpl(impl Impl) *common.ChaosImplPair {
+	delegate := action.New(&impl)
 	return &common.ChaosImplPair{
 		Name:   "timechaos",
 		Object: &v1alpha1.TimeChaos{},
-		Impl: &Impl{
-			Client:  c,
-			Log:     log.WithName("timechaos"),
-			decoder: decoder,
-		},
+		Impl:   &delegate,
 	}
 }
 
@@ -126,4 +46,6 @@ var Module = fx.Provide(
 		Group:  "impl",
 		Target: NewImpl,
 	},
+	timeskew.NewImpl,
+	timestop.NewImpl,
 )
