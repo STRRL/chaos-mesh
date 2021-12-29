@@ -33,8 +33,8 @@ jobs:
 
           if [ "${GITHUB_REF_TYPE}" = "tag" ] ; then
               BRANCHES=$(git branch --format='%(refname:short)' --contains ${IMAGE_TAG})
-              ENV_IMAGE_TAG=$(echo ${BRANCHES} | grep -v HEAD | head -n 1)
-              echo "available branches for this tag:\n${BRANCHES}"
+              ENV_IMAGE_TAG=$(git branch --format='%(refname:short)' --contains ${IMAGE_TAG} | grep -v HEAD | head -n 1)
+              echo -e "available branches for this tag:\n${BRANCHES}\n"
               echo "use dev-env and build-env for branch: ${ENV_IMAGE_TAG}"
           fi
 
