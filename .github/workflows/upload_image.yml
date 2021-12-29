@@ -30,6 +30,7 @@ jobs:
 
           if [ "${GITHUB_REF_TYPE}" = "tag" ] ; then
               ENV_IMAGE_TAG=$(git branch --show-current)
+              echo "Building from tag ${ENV_IMAGE_TAG}"
           fi
 
           echo "::set-output name=image_tag::$(echo $IMAGE_TAG)"
