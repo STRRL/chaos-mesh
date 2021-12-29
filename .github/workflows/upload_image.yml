@@ -16,7 +16,7 @@ jobs:
     outputs:
       image_tag: ${{ steps.image_tag.outputs.image_tag }}
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v2
         with:
           # it is required for fetching branches which contains certain tag
           fetch-depth: 0
