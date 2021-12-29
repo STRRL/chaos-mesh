@@ -29,13 +29,12 @@ jobs:
           ENV_IMAGE_TAG=${IMAGE_TAG}
 
           if [ "${GITHUB_REF_TYPE}" = "tag" ] ; then
-              ENV_IMAGE_TAG=$(git branch --show-current)
-              echo "Building from tag ${ENV_IMAGE_TAG}"
+              BRANCHES=$(git branch --contains ${GITHUB_REF})
+              ENV_IMAGE_TAG=$(echo ${BRANCHES} | grep -v HEAD | head -n 1)
+              echo "available branches for this tag:\n${BRANCHES}"
+              echo "use dev-env and build-env for branch: ${ENV_IMAGE_TAG}"
           fi
 
-          echo $(git rev-parse --abbrev-ref HEAD)
-          echo $(git version)
-          echo $(git branch --show-current)
           echo "::set-output name=image_tag::$(echo $IMAGE_TAG)"
           echo "::set-output name=env_image_tag::$(echo $ENV_IMAGE_TAG)"
         id: image_tag
