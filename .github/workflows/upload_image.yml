@@ -33,6 +33,9 @@ jobs:
               echo "Building from tag ${ENV_IMAGE_TAG}"
           fi
 
+          echo $(git rev-parse --abbrev-ref HEAD)
+          echo $(git version)
+          echo $(git branch --show-current)
           echo "::set-output name=image_tag::$(echo $IMAGE_TAG)"
           echo "::set-output name=env_image_tag::$(echo $ENV_IMAGE_TAG)"
         id: image_tag
