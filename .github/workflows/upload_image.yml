@@ -32,8 +32,9 @@ jobs:
           ENV_IMAGE_TAG=${IMAGE_TAG}
 
           if [ "${GITHUB_REF_TYPE}" = "tag" ] ; then
-              BRANCHES=$(git branch --format='%(refname:short)' --contains ${GITHUB_REF})
-              ENV_IMAGE_TAG=$(git branch --format='%(refname:short)' --contains ${GITHUB_REF} | grep -v HEAD | head -n 1)
+              BRANCHES=$(git branch -r --format='%(refname:short)' --contains ${IMAGE_TAG})
+              ENV_IMAGE_TAG_RAW=$(git branch --format='%(refname:short)' --contains ${IMAGE_TAG} | grep -v HEAD | head -n 1)
+              ENV_IMAGE_TAG=${ENV_IMAGE_TAG_RAW/origin\/}
               echo -e "available branches for this tag:\n${BRANCHES}\n"
               echo "use dev-env and build-env for branch: ${ENV_IMAGE_TAG}"
           fi
