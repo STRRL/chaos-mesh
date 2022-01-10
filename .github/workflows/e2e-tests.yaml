@@ -62,7 +62,7 @@ jobs:
       uses: azure/setup-helm@v1
     - name: Install Chaos Mesh
       run: |
-        make docker-push-dns-server install
+        make install
     - name: e2e tests
       run: |
         KUBECONFIG=~/.kube/config GINKGO_FLAGS=-p make e2e
