@@ -84,6 +84,7 @@ jobs:
         mkdir -p ./e2e-test/image/e2e/bin
         mv ./output/e2e-binary/ginkgo ./e2e-test/image/e2e/bin/ginkgo
         mv ./output/e2e-binary/e2e.test ./e2e-test/image/e2e/bin/e2e.test
+        chmod +x ./e2e-test/image/e2e/bin/ginkgo
     - name: Setup minikube
       uses: manusa/actions-setup-minikube@v2.4.3
       with:
