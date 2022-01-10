@@ -40,7 +40,7 @@ jobs:
           - v1.21.1
           - v1.12.10
     steps:
-    - name: Check out code into the Go module directory
+    - name: checkout codes
       uses: actions/checkout@v2
     - name: download saved images
       uses: actions/download-artifact@v2
@@ -54,7 +54,7 @@ jobs:
         docker load ./output/saved-images/chaos-mesh.tgz
         docker load ./output/saved-images/e2e-helper.tgz
     - name: Setup minikube
-      uses: manusa/actions-setup-minikube@v2
+      uses: manusa/actions-setup-minikube@v2.4.3
       with:
         minikube version: v1.23.0
         kubernetes version: ${{ matrix.kubernetes-version }}
