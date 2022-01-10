@@ -95,7 +95,7 @@ jobs:
       uses: azure/setup-helm@v1
     - name: Install Chaos Mesh
       run: |
-        helm upgrade --install --create-namespace chaos-mesh helm/chaos-mesh --namespace=chaos-testing --set images.registry=localhost:5000 --set dnsServer.create=true --set dashboard.create=true;
+        helm upgrade --wait --install --create-namespace chaos-mesh helm/chaos-mesh --namespace=chaos-testing --set images.registry=localhost:5000 --set dnsServer.create=true --set dashboard.create=true;
     - name: e2e tests
       env:
         FOCUS: ${{ matrix.focus }}
