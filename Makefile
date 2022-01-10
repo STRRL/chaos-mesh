@@ -14,7 +14,6 @@ export IMAGE_CHAOS_DAEMON_PROJECT ?= chaos-mesh
 export IMAGE_CHAOS_DASHBOARD_PROJECT ?= chaos-mesh
 
 ROOT=$(shell pwd)
-HELM_BIN=$(ROOT)/output/bin/helm
 
 # Every branch should have its own image tag for build-env and dev-env
 export IMAGE_BUILD_ENV_PROJECT ?= chaos-mesh
@@ -108,7 +107,7 @@ run: generate fmt vet manifests
 NAMESPACE ?= chaos-testing
 # Install CRDs into a cluster
 install: manifests
-	$(HELM_BIN) upgrade --install chaos-mesh helm/chaos-mesh --namespace=${NAMESPACE} --set images.registry=${IMAGE_REGISTRY} --set dnsServer.create=true --set dashboard.create=true;
+	helm upgrade --install chaos-mesh helm/chaos-mesh --namespace=${NAMESPACE} --set images.registry=${IMAGE_REGISTRY} --set dnsServer.create=true --set dashboard.create=true;
 
 clean:
 	rm -rf $(CLEAN_TARGETS)
