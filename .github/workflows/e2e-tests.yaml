@@ -23,7 +23,7 @@ jobs:
         docker image save localhost:5000/chaos-mesh/chaos-daemon:latest > ./output/saved-images/chaos-daemon.tgz
         docker image save localhost:5000/chaos-mesh/chaos-mesh:latest > ./output/saved-images/chaos-mesh.tgz
         docker image save localhost:5000/pingcap/e2e-helper > ./output/saved-images/e2e-helper.tgz
-    - name: restore e2e images as artifact
+    - name: upload saved images
       uses: actions/upload-artifact@v2
       with:
         name: saved-images
@@ -42,7 +42,8 @@ jobs:
     steps:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v2
-    - uses: actions/download-artifact@v2
+    - name: download saved images
+      uses: actions/download-artifact@v2
       with:
         name: saved-images
         path: ./output/saved-images
