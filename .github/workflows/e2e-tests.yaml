@@ -8,7 +8,7 @@ on:
       - release-*
 
 jobs:
-  build image:
+  build-image:
     runs-on: ubuntu-latest
     steps:
     - name: Check out code into the Go module directory
