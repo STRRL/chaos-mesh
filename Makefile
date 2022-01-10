@@ -226,7 +226,7 @@ docker-push-chaos-kernel:
 	docker push "${IMAGE_REGISTRY_PREFIX}pingcap/chaos-kernel:${IMAGE_TAG}"
 
 bin/chaos-builder: SHELL:=$(RUN_IN_DEV_SHELL)
-bin/chaos-builder: images/dev-env/.dockerbuilt 
+bin/chaos-builder: images/dev-env/.dockerbuilt
 	$(CGOENV) go build -ldflags '$(LDFLAGS)' -o bin/chaos-builder ./cmd/chaos-builder/...
 
 chaos-build: SHELL:=$(RUN_IN_DEV_SHELL)
