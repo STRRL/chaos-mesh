@@ -1,6 +1,7 @@
 name: E2E test matrix
 
 on:
+  push: {}
   pull_request:
     branches:
       - master
