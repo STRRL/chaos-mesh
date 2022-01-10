@@ -11,7 +11,7 @@ jobs:
   build-image:
     runs-on: ubuntu-latest
     steps:
-    - name: Check out code into the Go module directory
+    - name: checkout codes
       uses: actions/checkout@v2
     - name: build e2e images
       run: |
@@ -28,9 +28,23 @@ jobs:
       with:
         name: saved-images
         path: ./output/saved-images
-
+  build-e2e-binary:
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout codes
+      uses: actions/checkout@v2
+    - name: build e2e binary
+      run: |
+        make e2e-build
+    - name: upload e2e binary
+      uses: actions/upload-artifact@v2
+      with:
+        name: e2e-binary
+        path: ./e2e-test/image/e2e/bin
   e2e-all-tests:
-    needs: build-image
+    needs:
+    - build-image
+    - build-e2e-binary
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -60,6 +74,16 @@ jobs:
         docker load -i ./output/saved-images/chaos-daemon.tgz
         docker load -i ./output/saved-images/chaos-mesh.tgz
         docker load -i ./output/saved-images/e2e-helper.tgz
+    - name: download e2e binary
+      uses: actions/download-artifact@v2
+      with:
+        name: e2e-binary
+        path: ./output/e2e-binary
+    - name: move e2e binary
+      run: |
+        mkdir -p ./e2e-test/image/e2e/bin
+        mv ./output/e2e-binary/ginkgo ./e2e-test/image/e2e/bin/ginkgo
+        mv ./output/e2e-binary/e2e.test ./e2e-test/image/e2e/bin/e2e.test
     - name: Setup minikube
       uses: manusa/actions-setup-minikube@v2.4.3
       with:
@@ -69,9 +93,9 @@ jobs:
       uses: azure/setup-helm@v1
     - name: Install Chaos Mesh
       run: |
-        make install
+        helm upgrade --install --create-namespace chaos-mesh helm/chaos-mesh --namespace=chaos-testing --set images.registry=localhost:5000 --set dnsServer.create=true --set dashboard.create=true;
     - name: e2e tests
       env:
         FOCUS: ${{ matrix.focus }}
       run: |
-        KUBECONFIG=~/.kube/config GINKGO_FLAGS="-p -focus ${FOCUS}" make e2e
+        ./e2e-test/image/e2e/bin/ginkgo -p -focus="${FOCUS}" ./e2e-test/image/e2e/bin/e2e.test -- --e2e-image localhost:5000/pingcap/e2e-helper:latest
