@@ -22,7 +22,7 @@ jobs:
         docker image save localhost:5000/chaos-mesh/chaos-dashboard:latest > ./output/saved-images/chaos-dashboard.tgz
         docker image save localhost:5000/chaos-mesh/chaos-daemon:latest > ./output/saved-images/chaos-daemon.tgz
         docker image save localhost:5000/chaos-mesh/chaos-mesh:latest > ./output/saved-images/chaos-mesh.tgz
-        docker image save localhost:5000/pingcap/e2e-helper > ./output/saved-images/e2e-helper.tgz
+        docker image save localhost:5000/pingcap/e2e-helper:latest > ./output/saved-images/e2e-helper.tgz
     - name: upload saved images
       uses: actions/upload-artifact@v2
       with:
@@ -79,7 +79,7 @@ jobs:
         minikube loadlocalhost:5000/chaos-mesh/chaos-dashboard:latest
         minikube loadlocalhost:5000/chaos-mesh/chaos-daemon:latest
         minikube loadlocalhost:5000/chaos-mesh/chaos-mesh:latest
-        minikube loadlocalhost:5000/pingcap/e2e-helper
+        minikube loadlocalhost:5000/pingcap/e2e-helper:latest
     - name: download e2e binary
       uses: actions/download-artifact@v2
       with:
