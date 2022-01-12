@@ -76,10 +76,10 @@ jobs:
         docker load -i ./output/saved-images/chaos-daemon.tgz
         docker load -i ./output/saved-images/chaos-mesh.tgz
         docker load -i ./output/saved-images/e2e-helper.tgz
-        minikube loadlocalhost:5000/chaos-mesh/chaos-dashboard:latest
-        minikube loadlocalhost:5000/chaos-mesh/chaos-daemon:latest
-        minikube loadlocalhost:5000/chaos-mesh/chaos-mesh:latest
-        minikube loadlocalhost:5000/pingcap/e2e-helper:latest
+        minikube image load localhost:5000/chaos-mesh/chaos-dashboard:latest
+        minikube image load localhost:5000/chaos-mesh/chaos-daemon:latest
+        minikube image load localhost:5000/chaos-mesh/chaos-mesh:latest
+        minikube image load localhost:5000/pingcap/e2e-helper:latest
     - name: download e2e binary
       uses: actions/download-artifact@v2
       with:
