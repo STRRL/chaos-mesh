@@ -110,16 +110,21 @@ jobs:
         FOCUS: ${{ matrix.focus }}
       run: |
         KUBECONFIG=~/.kube/config ./e2e-test/image/e2e/bin/ginkgo -p -focus="${FOCUS}" ./e2e-test/image/e2e/bin/e2e.test -- --e2e-image localhost:5000/pingcap/e2e-helper:latest
-    - name: post run - extract logs from kubernetes
+    - name: post run - extract profile info from kubernetes
       if: always()
+      env:
+        PROFILE_DIRECTORY: ./output/chaos-mesh-profile
       run: |
-        mkdir -p ./output/chaos-mesh-logs
-        for pod in $(kubectl -n chaos-testing get pods --no-headers | awk '{print $1}'); do kubectl -n chaos-testing logs $pod > ./output/chaos-mesh-logs/$pod.log; done;
-
-    - name: post run - upload Chaos Mesh components logs
-      if: always()
+        mkdir -p $PROFILE_DIRECTORY/logs
+        mkdir -p $PROFILE_DIRECTORY/manifests/pods
+        mkdir -p $PROFILE_DIRECTORY/manifests/services
+        for item in $(kubectl -n chaos-testing get pods --no-headers | awk '{print $1}'); do kubectl -n chaos-testing logs $item > $PROFILE_DIRECTORY/logs/$item.log; done;
+        for item in $(kubectl -n chaos-testing get pods --no-headers | awk '{print $1}'); do kubectl -n chaos-testing get pod $item -oyaml > $PROFILE_DIRECTORY/pods/pod-$item.yaml; done;
+        for item in $(kubectl -n chaos-testing get services --no-headers | awk '{print $1}'); do kubectl -n chaos-testing get services $item -oyaml > $PROFILE_DIRECTORY/services/service-$item.yaml; done;
+        for item in $(kubectl -n chaos-testing get endpoints --no-headers | awk '{print $1}'); do kubectl -n chaos-testing get endpoints $item -oyaml > $PROFILE_DIRECTORY/services/endpoint-$item.yaml; done;
+    - name: post run - upload Chaos Mesh profile info
       uses: actions/upload-artifact@v2
       with:
-        name: chaos mesh components with logs ${{ matrix.focus }} testcases on kubernetes ${{ matrix.kubernetes-version }}
-        path: ./output/chaos-mesh-logs
+        name: profiling-${{ matrix.focus }}-k8s-${{ matrix.kubernetes-version }}
+        path: ./output/chaos-mesh-profile
         retention-days: 7
