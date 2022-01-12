@@ -123,6 +123,7 @@ jobs:
         for item in $(kubectl -n chaos-testing get services --no-headers | awk '{print $1}'); do kubectl -n chaos-testing get services $item -oyaml > $PROFILE_DIRECTORY/manifests/services/service-$item.yaml; done;
         for item in $(kubectl -n chaos-testing get endpoints --no-headers | awk '{print $1}'); do kubectl -n chaos-testing get endpoints $item -oyaml > $PROFILE_DIRECTORY/manifests/services/endpoint-$item.yaml; done;
     - name: post run - upload Chaos Mesh profile info
+      if: always()
       uses: actions/upload-artifact@v2
       with:
         name: profiling-${{ matrix.focus }}-k8s-${{ matrix.kubernetes-version }}
