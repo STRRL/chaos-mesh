@@ -104,13 +104,13 @@ jobs:
         FOCUS: ${{ matrix.focus }}
       run: |
         KUBECONFIG=~/.kube/config ./e2e-test/image/e2e/bin/ginkgo -p -focus="${FOCUS}" ./e2e-test/image/e2e/bin/e2e.test -- --e2e-image localhost:5000/pingcap/e2e-helper:latest
-    - name: extract logs from kubernetes
+    - name: post run - extract logs from kubernetes
       if: always()
       run: |
         mkdir -p ./output/chaos-mesh-logs
-        for pod in $(kubectl -n chaos-testing get pods --no-headers); do kubectl -n chaos-testing logs $pod > ./output/chaos-mesh-logs/$pod.log; done;
+        for pod in $(kubectl -n chaos-testing get pods --no-headers | awk '{print $1}'); do kubectl -n chaos-testing logs $pod > ./output/chaos-mesh-logs/$pod.log; done;
 
-    - name: upload Chaos Mesh components logs
+    - name: post run - upload Chaos Mesh components logs
       if: always()
       uses: actions/upload-artifact@v2
       with:
