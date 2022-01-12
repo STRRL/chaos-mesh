@@ -120,5 +120,6 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v2
       with:
+        name: chaos mesh components with logs ${{ matrix.focus }} testcases on kubernetes ${{ matrix.kubernetes-version }}
         path: ./output/chaos-mesh-logs
         retention-days: 7
