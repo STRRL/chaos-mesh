@@ -89,10 +89,12 @@ jobs:
         chmod +x ./e2e-test/image/e2e/bin/ginkgo
         chmod +x ./e2e-test/image/e2e/bin/e2e.test
     - name: Setup minikube
-      uses: medyagh/setup-minikube@latest
+      uses: manusa/actions-setup-minikube@v2.4.3
       with:
         driver: docker
-        kubernetes-version: ${{ matrix.kubernetes-version }}
+        minikube version: v1.24.0
+        kubernetes version: ${{ matrix.kubernetes-version }}
+        start args: --cni flannel
     - name: load image into minikube
       run: |
         minikube image load localhost:5000/chaos-mesh/chaos-dashboard:latest
