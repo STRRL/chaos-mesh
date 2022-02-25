@@ -1,0 +1,18 @@
+name: Debug Git Version
+on:
+  workflow_dispatch: {}
+
+jobs:
+  bash-x-version:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64]
+        image: [chaos-mesh]
+    steps:
+      - uses: actions/checkout@master
+      - name: Extract Version
+        shell: bash
+        run: |
+            bash -x ./hack/version.sh
+        id: image_tag
