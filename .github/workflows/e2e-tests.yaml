@@ -52,7 +52,7 @@ jobs:
       fail-fast: false
       matrix:
         kubernetes-version:
-          - v1.15.13
+          - v1.15.12
           - v1.20.15
           - v1.23.4
         focus:
@@ -125,3 +125,11 @@ jobs:
         name: profiling-${{ matrix.focus }}-k8s-${{ matrix.kubernetes-version }}
         path: ./output/chaos-mesh-profile
         retention-days: 7
+    - name: attach test report
+      if: success() || failure()
+      uses: actions/upload-artifact@v2
+      with:
+        name: Ginkgo E2E Tests
+        path: '**/*.xml'
+        reporter: jest-junit
+
