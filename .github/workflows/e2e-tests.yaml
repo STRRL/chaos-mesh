@@ -127,11 +127,18 @@ jobs:
         name: profiling-${{ matrix.focus }}-k8s-${{ matrix.kubernetes-version }}
         path: ./output/chaos-mesh-profile
         retention-days: 7
-    - name: attach test report
+    - name: post run - upload junit test reports
+      if: always()
+      uses: actions/upload-artifact@v2
+      with:
+        name: test-reports-${{ matrix.focus }}-k8s-${{ matrix.kubernetes-version }}
+        path: "**/*.xml"
+        retention-days: 7
+    - name: build test report
       if: success() || failure()
       uses: dorny/test-reporter@v1
       with:
         name: Ginkgo E2E Tests
         path: "**/*.xml"
-        reporter: jest-junit
+        reporter: java-junit
 
