@@ -127,9 +127,9 @@ jobs:
         retention-days: 7
     - name: attach test report
       if: success() || failure()
-      uses: actions/upload-artifact@v2
+      uses: dorny/test-reporter@v1
       with:
         name: Ginkgo E2E Tests
-        path: '**/*.xml'
+        path: "**/*.xml"
         reporter: jest-junit
 
