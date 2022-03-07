@@ -141,7 +141,7 @@ jobs:
       if: success() || failure()
       uses: dorny/test-reporter@v1
       with:
-        name: Ginkgo E2E Tests
+        name: Ginkgo E2E Tests ${{ matrix.focus }} on Kubernetes ${{ matrix.kubernetes-version }}
         path: "**/*.xml"
         reporter: java-junit
 
