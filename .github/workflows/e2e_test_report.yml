@@ -16,7 +16,7 @@ jobs:
     steps:
     - name: build test report
       # only triggered by another workflow
-      if: "${{ github.event_name }} == 'workflows'"
+      if: github.event_name != 'pull_request'
       uses: dorny/test-reporter@v1
       with:
         artifact: '/test-junit-reports-(.*)/'
