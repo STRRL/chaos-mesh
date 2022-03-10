@@ -4,8 +4,8 @@
 
 name: E2E Test Report
 on:
+  pull_request: {}
   workflow_run:
-    pull_request: {}
     workflows: ['E2E Test']
     types:
       - completed
