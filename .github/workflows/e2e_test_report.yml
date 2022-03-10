@@ -4,6 +4,7 @@
 
 name: E2E Test Report
 on:
+  pull_request: {}
   workflow_run:
     workflows: ['E2E Test']
     types:
@@ -14,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: build test report
+      # only triggered by another workflow
+      if: "${{ github.event_name }} == 'workflows'"
       uses: dorny/test-reporter@v1
       with:
         artifact: '/test-junit-reports-(.*)/'
