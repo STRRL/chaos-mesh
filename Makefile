@@ -282,7 +282,8 @@ groupimports: images/dev-env/.dockerbuilt
 
 fmt: SHELL:=$(RUN_IN_DEV_SHELL)
 fmt: groupimports images/dev-env/.dockerbuilt
-	$(CGO) fmt $$($(PACKAGE_LIST))
+	$(CGO) fmt ./...
+	cd api; $(CGO) fmt ./...
 
 vet: SHELL:=$(RUN_IN_DEV_SHELL)
 vet: images/dev-env/.dockerbuilt
