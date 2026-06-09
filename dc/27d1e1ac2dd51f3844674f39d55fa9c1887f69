@@ -1,0 +1,19 @@
+e2e-test/e2e/chaos/networkchaos/network_delay.go
+  s_d57443e4fe84a7::t_ebe2273061614b 101,116,142,156,181,195,208,221,244,258,281,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "dc27d1e1ac2dd51f3844674f39d55fa9c1887f69",
+  "prompts": {},
+  "sessions": {
+    "s_d57443e4fe84a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33c1f85d-7fb0-457c-89d4-9be966da90a9",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Zhiqiang ZHOU <im@strrl.dev>"
+    }
+  }
+}
