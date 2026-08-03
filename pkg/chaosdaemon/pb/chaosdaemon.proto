@@ -155,10 +155,8 @@ message Chain {
   Direction direction = 2;
   repeated string ipsets = 3;
   string target = 4;
-  string protocol = 5;
-  string source_ports = 6;
-  string destination_ports = 7;
-  string tcp_flags = 8;
+  reserved 5, 6, 7, 8;
+  reserved "protocol", "source_ports", "destination_ports", "tcp_flags";
   string device = 9;
 }
 
@@ -265,9 +263,8 @@ message Tc {
   Netem netem = 2;
   Tbf tbf = 3;
   string ipset = 4;
-  string protocol = 5;
-  string source_port = 6;
-  string egress_port = 7;
+  reserved 5, 6, 7;
+  reserved "protocol", "source_port", "egress_port";
   string device = 9;
 }
 

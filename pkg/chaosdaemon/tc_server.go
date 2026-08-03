@@ -169,9 +169,8 @@ func (s *DaemonServer) SetTcs(ctx context.Context, in *pb.TcsRequest) (*empty.Em
 		filterTc := make(map[string][]*pb.Tc)
 
 		for _, tc := range rules {
-			filter := abstractTcFilter(tc)
-			if len(filter) > 0 {
-				filterTc[filter] = append(filterTc[filter], tc)
+			if len(tc.Ipset) > 0 {
+				filterTc[tc.Ipset] = append(filterTc[tc.Ipset], tc)
 				continue
 			}
 			globalTc = append(globalTc, tc)
@@ -277,10 +276,6 @@ func (s *DaemonServer) setFilterTcs(
 		if len(tc.Ipset) > 0 {
 			ch.Ipsets = []string{tc.Ipset}
 		}
-
-		ch.Protocol = tc.Protocol
-		ch.SourcePorts = tc.SourcePort
-		ch.DestinationPorts = tc.EgressPort
 
 		chains = append(chains, ch)
 
@@ -498,22 +493,4 @@ func convertTbfToArgs(tbf *pb.Tbf) string {
 	}
 
 	return args
-}
-
-func abstractTcFilter(tc *pb.Tc) string {
-	filter := tc.Ipset
-
-	if len(tc.Protocol) > 0 {
-		filter += "-" + tc.Protocol
-	}
-
-	if len(tc.EgressPort) > 0 {
-		filter += "-" + tc.EgressPort
-	}
-
-	if len(tc.SourcePort) > 0 {
-		filter += "-" + tc.EgressPort
-	}
-
-	return filter
 }

@@ -47,7 +47,7 @@ For more information and how-to, see [RFC: Keep A Changelog](https://github.com/
 
 ### Removed
 
-- Nothing
+- Remove unused fields from the chaos-daemon protobuf messages: `protocol`, `source_port` and `egress_port` on `Tc`, and `protocol`, `source_ports`, `destination_ports` and `tcp_flags` on `Chain`; they were never set by the Kubernetes controllers [#5056](https://github.com/chaos-mesh/chaos-mesh/pull/5056)
 
 ### Fixed
 

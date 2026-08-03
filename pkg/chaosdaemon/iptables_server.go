@@ -112,40 +112,15 @@ func (iptables *iptablesClient) setIptablesChain(chain *pb.Chain) error {
 		chain.Device = defaultDevice
 	}
 
-	protocolAndPort := ""
-	if len(chain.Protocol) > 0 {
-		protocolAndPort += fmt.Sprintf("--protocol %s", chain.Protocol)
-
-		if len(chain.SourcePorts) > 0 {
-			if strings.Contains(chain.SourcePorts, ",") {
-				protocolAndPort += fmt.Sprintf(" -m multiport --source-ports %s", chain.SourcePorts)
-			} else {
-				protocolAndPort += fmt.Sprintf(" --source-port %s", chain.SourcePorts)
-			}
-		}
-
-		if len(chain.DestinationPorts) > 0 {
-			if strings.Contains(chain.DestinationPorts, ",") {
-				protocolAndPort += fmt.Sprintf(" -m multiport --destination-ports %s", chain.DestinationPorts)
-			} else {
-				protocolAndPort += fmt.Sprintf(" --destination-port %s", chain.DestinationPorts)
-			}
-		}
-
-		if len(chain.TcpFlags) > 0 {
-			protocolAndPort += fmt.Sprintf(" --tcp-flags %s", chain.TcpFlags)
-		}
-	}
-
 	rules := []string{}
 
 	if len(chain.Ipsets) == 0 {
-		rules = append(rules, strings.TrimSpace(fmt.Sprintf("-A %s %s %s -j %s -w 5 %s", chain.Name, interfaceMatcher, chain.Device, chain.Target, protocolAndPort)))
+		rules = append(rules, fmt.Sprintf("-A %s %s %s -j %s -w 5", chain.Name, interfaceMatcher, chain.Device, chain.Target))
 	}
 
 	for _, ipset := range chain.Ipsets {
-		rules = append(rules, strings.TrimSpace(fmt.Sprintf("-A %s %s %s -m set --match-set %s %s -j %s -w 5 %s",
-			chain.Name, interfaceMatcher, chain.Device, ipset, matchPart, chain.Target, protocolAndPort)))
+		rules = append(rules, fmt.Sprintf("-A %s %s %s -m set --match-set %s %s -j %s -w 5",
+			chain.Name, interfaceMatcher, chain.Device, ipset, matchPart, chain.Target))
 	}
 	err := iptables.createNewChain(&iptablesChain{
 		Name:  chain.Name,
